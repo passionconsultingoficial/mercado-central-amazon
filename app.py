@@ -151,7 +151,8 @@ with tab1:
     if btn_diag:
         try:
             from modules.listing_agent import analisar_e_otimizar_listing
-            res = analisar_e_otimizar_listing(asin_input, produto_nosso)
+            # Passa o ASIN digitado diretamente como primeiro argumento
+            res = analisar_e_otimizar_listing(asin_input.strip(), produto_nosso.strip())
         except Exception as e:
             res = f"Erro no processamento: {str(e)}"
 
