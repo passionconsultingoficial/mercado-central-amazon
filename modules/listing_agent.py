@@ -1,12 +1,10 @@
 import os
 import requests
+import streamlit as st
 from bs4 import BeautifulSoup
 from anthropic import Anthropic
 
 def buscar_concorrentes_nicho(termo_ou_asin: str) -> tuple:
-    """
-    Gera links de busca de 5 concorrentes reais do nicho na Amazon Brasil.
-    """
     termo_limpo = termo_ou_asin.strip()
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -15,7 +13,6 @@ def buscar_concorrentes_nicho(termo_ou_asin: str) -> tuple:
     
     concorrentes = []
     
-    # Se for um ASIN (10 caracteres alfanuméricos)
     if len(termo_limpo) == 10 and termo_limpo.isalnum():
         url_asin = f"https://www.amazon.com.br/dp/{termo_limpo}"
         try:
@@ -28,7 +25,6 @@ def buscar_concorrentes_nicho(termo_ou_asin: str) -> tuple:
         except Exception:
             pass
 
-    # Realiza busca na Amazon Brasil
     search_url = f"https://www.amazon.com.br/s?k={requests.utils.quote(termo_limpo)}"
     try:
         res_search = requests.get(search_url, headers=headers, timeout=6)
@@ -50,7 +46,6 @@ def buscar_concorrentes_nicho(termo_ou_asin: str) -> tuple:
     except Exception:
         pass
 
-    # Fallback de busca caso a requisição seja bloqueada
     if not concorrentes:
         link_gen = f"https://www.amazon.com.br/s?k={requests.utils.quote(termo_limpo)}"
         for i in range(1, 6):
@@ -64,12 +59,14 @@ def buscar_concorrentes_nicho(termo_ou_asin: str) -> tuple:
 
 
 def analisar_e_otimizar_listing(asin_ou_termo: str, detalhes_adicionais: str = "") -> str:
-    """
-    Agente Mestre A9/A10 para Amazon Brasil.
-    """
+    # Captura a chave tanto do ambiente quanto dos Secrets do Streamlit
     api_key = os.getenv("ANTHROPIC_API_KEY")
-    
-    # 1. Mapeia concorrentes reais
+    if not api_key:
+        try:
+            api_key = st.secrets["ANTHROPIC_API_KEY"]
+        except Exception:
+            api_key = None
+
     concorrentes, termo_referencia = buscar_concorrentes_nicho(asin_ou_termo)
     
     links_md = f"### 🔗 5 Concorrentes Diretos Mapeados no Mercado (Amazon BR):\n\n"
@@ -77,7 +74,6 @@ def analisar_e_otimizar_listing(asin_ou_termo: str, detalhes_adicionais: str = "
         links_md += f"{i}. [{conc['titulo']}]({conc['link']}) - **ASIN:** `{conc['asin']}`\n"
     links_md += "\n---\n"
 
-    # 2. Prompt Mestre A9/A10 sem conflito de aspas/chaves
     detalhes_str = detalhes_adicionais if detalhes_adicionais else "Produto de alta demanda do nicho"
     
     prompt_mestre = f"""
@@ -172,8 +168,8 @@ Para cada imagem, crie o prompt técnico completo iniciando obrigatoriamente com
 6. **Capacidade / Aplicação Prática:**
 """
 
-    if api_key and len(api_key.strip()) > 10:
-        client = Anthropic(api_key=api_key)
+    if api_key and len(str(api_key).strip()) > 10:
+        client = Anthropic(api_key=str(api_key).strip())
         for model_name in ["claude-3-haiku-20240307", "claude-3-sonnet-20240229", "claude-3-5-sonnet-20240620"]:
             try:
                 res = client.messages.create(
