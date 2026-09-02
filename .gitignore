@@ -1,0 +1,4 @@
+.env
+marketplace.db
+__pycache__/
+*.pyc
