@@ -149,11 +149,13 @@ with tab1:
         bullet_points_concorrente = st.text_area("Bullet Points do Concorrente", value="Cancelamento de ruído ativo, Bateria de até 30 horas, Conexão Bluetooth 5.3, Resistente à água IPX5", height=100)
         
     if btn_diag:
-        # Importação direta para garantir a chamada da função atualizada
-        from modules.listing_agent import analisar_e_otimizar_listing
-        
         termo_entrada = produto_nosso if produto_nosso.strip() else asin_input
-        res = analisar_e_otimizar_listing(asin_input, termo_entrada)
+        
+        try:
+            from modules.listing_agent import analisar_e_otimizar_listing
+            res = analisar_e_otimizar_listing(asin_input, termo_entrada)
+        except Exception as e:
+            res = f"Erro no processamento: {str(e)}"
 
         st.success("Diagnóstico concluído com sucesso!")
         
