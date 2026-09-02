@@ -166,33 +166,48 @@ with tab1:
             st.json(res)
         else:
             st.markdown(res)
-
+            
 # MÓDULO 2: Precificação e Repricer
 with tab2:
     st.subheader("💰 Módulo 2: Precificação e Motor de Repricer")
     preco_venda = st.slider("Simular Preço de Venda (R$)", min_value=10.0, max_value=500.0, value=89.90, step=1.0)
     
     if st.button("Calcular Margem e Break-even", type="primary"):
+        dados_produto = {
+            "preco": preco_venda,
+            "custo": custo_unitario,
+            "imposto": imposto_efetivo,
+            "comissao": comissao_amazon,
+            "logistica": tarifa_logistica
+        }
+        
         try:
-            # Tenta a chamada completa passando todos os parâmetros
-            res = calcular_precificacao_e_breakeven(preco_venda, custo_unitario, imposto_efetivo, comissao_amazon, tarifa_logistica)
+            # 1ª Tentativa: Passa apenas o dicionário de dados (1 argumento)
+            res = calcular_precificacao_e_breakeven(dados_produto)
         except TypeError:
             try:
-                # Fallback para a assinatura padrão (preco, custo)
-                res = calcular_precificacao_e_breakeven(preco_venda, custo_unitario)
-            except Exception as e:
-                res = {"error": str(e)}
+                # 2ª Tentativa: Passa argumentos posicionais completos
+                res = calcular_precificacao_e_breakeven(preco_venda, custo_unitario, imposto_efetivo, comissao_amazon, tarifa_logistica)
+            except TypeError:
+                try:
+                    # 3ª Tentativa: Passa apenas o preço de venda
+                    res = calcular_precificacao_e_breakeven(preco_venda)
+                except Exception as e:
+                    res = {"error": str(e)}
         except Exception as e:
             res = {"error": str(e)}
 
-        if isinstance(res, dict):
+        # Exibição dos Resultados
+        if isinstance(res, dict) and "error" not in res:
             c1, c2 = st.columns(2)
-            c1.metric("Lucro Líquido Estimado", f"R$ {res.get('lucro_liquido', 0)}")
-            c2.metric("Margem Líquida (%)", f"{res.get('margem_porcentagem', 0)}%")
+            c1.metric("Lucro Líquido Estimado", f"R$ {res.get('lucro_liquido', res.get('lucro', 0))}")
+            c2.metric("Margem Líquida (%)", f"{res.get('margem_porcentagem', res.get('margem', 0))}%")
             st.json(res)
+        elif isinstance(res, dict) and "error" in res:
+            st.error(f"Erro ao calcular: {res['error']}")
         else:
             st.markdown(res)
-            
+
 # MÓDULO 3: Ads
 with tab3:
     st.subheader("📢 Módulo 3: Otimização de Campanhas Amazon Ads")
