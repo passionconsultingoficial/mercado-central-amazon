@@ -150,18 +150,22 @@ with tab1:
         
     if btn_diag:
         try:
-            # Envia os argumentos requeridos pela função do módulo
             res = analisar_e_otimizar_listing(bullet_points_concorrente, produto_nosso)
         except TypeError:
             try:
                 res = analisar_e_otimizar_listing(asin_input, bullet_points_concorrente, produto_nosso)
             except Exception as e:
-                res = {"status": "erro", "detalhe": str(e)}
+                res = f"Erro no processamento: {str(e)}"
         except Exception as e:
-            res = {"status": "erro", "detalhe": str(e)}
+            res = f"Erro no processamento: {str(e)}"
 
         st.success("Diagnóstico concluído com sucesso!")
-        st.json(res)
+        
+        # Trata o formato de exibição para evitar o erro de JSON Parse
+        if isinstance(res, dict):
+            st.json(res)
+        else:
+            st.markdown(res)
 
 # MÓDULO 2: Precificação e Repricer
 with tab2:
