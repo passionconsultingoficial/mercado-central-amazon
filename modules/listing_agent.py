@@ -3,17 +3,11 @@ import requests
 from anthropic import Anthropic
 
 def buscar_concorrentes_diretos(termo_busca: str) -> list:
-    """
-    Busca na Amazon Brasil os 5 concorrentes mais relevantes para o termo.
-    Retorna uma lista com dicionários contendo ASIN, Título e Link direto.
-    """
     refresh_token = os.getenv("LWA_REFRESH_TOKEN")
     app_id = os.getenv("LWA_APP_ID")
     client_secret = os.getenv("LWA_CLIENT_SECRET")
     
     concorrentes = []
-    
-    # Se houver tokens da SP-API, realiza consulta na Search Catalog Items
     if refresh_token and client_secret:
         try:
             auth_url = "https://api.amazon.com/auth/o2/token"
@@ -27,7 +21,6 @@ def buscar_concorrentes_diretos(termo_busca: str) -> list:
             access_token = auth_res.json().get("access_token")
             
             if access_token:
-                # Marketplace ID Brasil: A2Q3Y263D00KWC
                 search_url = f"https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?keywords={termo_busca}&marketplaceIds=A2Q3Y263D00KWC&pageSize=5&includedData=summaries"
                 headers = {"x-amz-access-token": access_token}
                 s_res = requests.get(search_url, headers=headers, timeout=10)
@@ -46,7 +39,6 @@ def buscar_concorrentes_diretos(termo_busca: str) -> list:
         except Exception:
             pass
 
-    # Fallback estruturado com 5 links de concorrentes caso a consulta à API não retorne dados
     if not concorrentes:
         asins_fallback = ["B08N5WRWNW", "B09B2W8LCS", "B0C9R94XYZ", "B08X13P992", "B08N5X9999"]
         for idx, item_asin in enumerate(asins_fallback, start=1):
@@ -60,28 +52,20 @@ def buscar_concorrentes_diretos(termo_busca: str) -> list:
 
 
 def analisar_e_otimizar_listing(asin_ou_bullets: str, produto_nosso: str = "") -> str:
-    """
-    Consolida os dados do produto, traz 5 links de concorrentes e realiza o diagnóstico via Claude.
-    """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return "Erro: ANTHROPIC_API_KEY não configurada nos Secrets do Streamlit."
 
     client = Anthropic(api_key=api_key)
-
-    # Define o termo de busca para localizar concorrentes
     termo = produto_nosso if produto_nosso else asin_ou_bullets
     
-    # 1. Busca os 5 concorrentes diretos
     lista_concorrentes = buscar_concorrentes_diretos(termo)
     
-    # Monta o bloco de links em Markdown
     links_md = "### 🔗 Links dos 5 Concorrentes Diretos Encontrados:\n"
     for i, conc in enumerate(lista_concorrentes, start=1):
         links_md += f"{i}. [{conc['titulo']}]({conc['link']}) - *ASIN: {conc['asin']}*\n"
     links_md += "\n---\n"
 
-    # 2. Prompt estruturado para o Claude
     prompt = f"""
     Você é um especialista sênior em SEO e Inteligência Competitiva para a Amazon Brasil.
     
@@ -100,12 +84,24 @@ def analisar_e_otimizar_listing(asin_ou_bullets: str, produto_nosso: str = "") -
     Apresente a resposta final em formato Markdown bem organizado.
     """
 
-    # Chamada com o identificador de modelo válido
-    response = client.messages.create(
-        model="claude-3-5-sonnet-20240620",
-        max_tokens=1500,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    # Tenta usar o modelo 3.5 e faz fallback para os modelos v3 padrão se a chave não tiver permissão
+    modelos_disponiveis = [
+        "claude-3-haiku-20240307",
+        "claude-3-sonnet-20240229",
+        "claude-3-5-sonnet-20240620"
+    ]
 
-    # Retorna a lista de links no topo acompanhada pela análise do Claude
-    return links_md + "\n" + response.content[0].text
+    for model_id in modelos_disponiveis:
+        try:
+            response = client.messages.create(
+                model=model_id,
+                max_tokens=1500,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return links_md + "\n" + response.content[0].text
+        except Exception as e:
+            if "not_found_error" in str(e) or "404" in str(e):
+                continue
+            return f"Erro na API da Anthropic: {str(e)}"
+
+    return "Erro: Nenhum modelo do Claude pôde ser acessado com esta chave de API. Verifique as permissões da chave na Anthropic."
