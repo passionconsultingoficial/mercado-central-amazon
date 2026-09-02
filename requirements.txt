@@ -1,5 +1,5 @@
 streamlit
 pandas
-requests
-python-amazon-sp-api
 reportlab
+python-dotenv
+requests
