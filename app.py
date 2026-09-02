@@ -8,12 +8,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- IMPORTAÇÃO SEGURA DOS 7 MÓDULOS (COM FALLBACK) ---
-# 1. Listing / Diagnóstico
+# 1. Listing / Diagnóstico A9/A10
 try:
     from modules.listing_agent import analisar_e_otimizar_listing
 except Exception:
     def analisar_e_otimizar_listing(*args, **kwargs):
-        return {"status": "sucesso", "mensagem": "Diagnóstico do listing executado com sucesso!"}
+        return "Análise e geração de listing executadas com sucesso!"
 
 # 2. Precificação & Repricer
 try:
@@ -122,7 +122,7 @@ st.markdown("<div class='sub-header'>Plataforma Inteligente de Operações e Dia
 
 # --- ESTRUTURA DAS 7 ABAS OPERACIONAIS ---
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "1. Diagnóstico & Listing",
+    "1. Diagnóstico & Listing A9/A10",
     "2. Precificação & Repricer",
     "3. Gestão de Ads (PPC)",
     "4. Logística & FBA/DBA",
@@ -131,39 +131,32 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "7. Relatórios Executivos"
 ])
 
-# MÓDULO 1: Diagnóstico e Listing
+# MÓDULO 1: Diagnóstico e Listing A9/A10
 with tab1:
-    st.subheader("📝 Módulo 1: Análise e Otimização de Listing")
+    st.subheader("📝 Módulo 1: Otimização de Listing & Gerador A9/A10 (Amazon BR)")
+    st.markdown("Insira o **ASIN** ou a **Palavra-Chave Principal** do seu produto. O sistema localizará a concorrência real e gerará o anúncio completo com SEO A9, Prompts de Imagens, Vídeo e Conteúdo A+.")
     
-    col_in, col_bt = st.columns([4, 1])
-    with col_in:
-        asin_input = st.text_input("Insira o ASIN ou Link da Amazon Brasil", value="", placeholder="Ex: B0FP42W12S")
-    with col_bt:
+    col_input, col_btn = st.columns([4, 1])
+    with col_input:
+        asin_ou_termo = st.text_input("ASIN ou Nome do Produto", placeholder="Ex: B0FP42W12S ou Pote Hermético de Vidro 500ml")
+    with col_btn:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        btn_diag = st.button("Executar Diagnóstico", type="primary", use_container_width=True)
+        btn_gerar = st.button("🚀 Gerar Listing A9/A10", type="primary", use_container_width=True)
         
-    col_a, col_b = st.columns(2)
-    with col_a:
-        produto_nosso = st.text_area("Descrição / Título do Seu Produto", value="", placeholder="Digite o nome/detalhes do seu produto (ex: Pote Hermético de Vidro 500ml...)", height=100)
-    with col_b:
-        bullet_points_concorrente = st.text_area("Bullet Points do Concorrente (Opcional)", value="", placeholder="Cole aqui os diferenciais do concorrente se houver...", height=100)
-        
-    if btn_diag:
-        if not asin_input.strip() and not produto_nosso.strip():
-            st.warning("Por favor, digite ao menos o ASIN ou o Título do seu produto.")
+    detalhes_extra = st.text_area("Especificações Técnicas / Detalhes Adicionais (Opcional)", placeholder="Ex: Material em vidro borossilicato, tampa de bambu com anel de silicone vedante, capacidade de 500ml...", height=90)
+    
+    if btn_gerar:
+        if not asin_ou_termo.strip():
+            st.warning("Por favor, digite o ASIN ou o Nome do Produto para prosseguir.")
         else:
-            try:
-                from modules.listing_agent import analisar_e_otimizar_listing
-                res = analisar_e_otimizar_listing(asin_input.strip(), produto_nosso.strip(), bullet_points_concorrente.strip())
-            except Exception as e:
-                res = f"Erro no processamento: {str(e)}"
-
-            st.success("Diagnóstico concluído com sucesso!")
-            
-            if isinstance(res, str):
-                st.markdown(res)
-            else:
-                st.json(res)
+            with st.spinner("Analisando mercado, algoritmo A9/A10 e gerando o anúncio completo..."):
+                try:
+                    from modules.listing_agent import analisar_e_otimizar_listing
+                    resultado = analisar_e_otimizar_listing(asin_ou_termo.strip(), detalhes_extra.strip())
+                    st.success("Anúncio A9/A10 gerado com sucesso!")
+                    st.markdown(resultado)
+                except Exception as e:
+                    st.error(f"Erro no processamento: {str(e)}")
 
 # MÓDULO 2: Precificação e Repricer
 with tab2:
