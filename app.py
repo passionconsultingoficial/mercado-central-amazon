@@ -55,7 +55,7 @@ try:
     from modules.tax_consultant_agent import consultar_regras_fiscais
 except Exception:
     def consultar_regras_fiscais(duvida):
-        return f"Análise fiscal concluída para: '{duvida}'. Regime applied: Lucro Real."
+        return f"Análise fiscal concluída para: '{duvida}'. Regime aplicado: Lucro Real."
 
 # 7. Relatórios Executivos
 try:
@@ -137,31 +137,33 @@ with tab1:
     
     col_in, col_bt = st.columns([4, 1])
     with col_in:
-        asin_input = st.text_input("Insira o ASIN ou Link da Amazon Brasil", value="B0FP42W12S")
+        asin_input = st.text_input("Insira o ASIN ou Link da Amazon Brasil", value="", placeholder="Ex: B0FP42W12S")
     with col_bt:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         btn_diag = st.button("Executar Diagnóstico", type="primary", use_container_width=True)
         
     col_a, col_b = st.columns(2)
     with col_a:
-        produto_nosso = st.text_area("Descrição / Título do Seu Produto", value="Fone de Ouvido Bluetooth TWS Sem Fio com Estojo Recarregável", height=100)
+        produto_nosso = st.text_area("Descrição / Título do Seu Produto", value="", placeholder="Digite o nome/detalhes do seu produto (ex: Pote Hermético de Vidro 500ml...)", height=100)
     with col_b:
-        bullet_points_concorrente = st.text_area("Bullet Points do Concorrente", value="Cancelamento de ruído ativo, Bateria de até 30 horas, Conexão Bluetooth 5.3, Resistente à água IPX5", height=100)
+        bullet_points_concorrente = st.text_area("Bullet Points do Concorrente (Opcional)", value="", placeholder="Cole aqui os diferenciais do concorrente se houver...", height=100)
         
     if btn_diag:
-        try:
-            from modules.listing_agent import analisar_e_otimizar_listing
-            # Passa o ASIN digitado diretamente como primeiro argumento
-            res = analisar_e_otimizar_listing(asin_input.strip(), produto_nosso.strip())
-        except Exception as e:
-            res = f"Erro no processamento: {str(e)}"
-
-        st.success("Diagnóstico concluído com sucesso!")
-        
-        if isinstance(res, str):
-            st.markdown(res)
+        if not asin_input.strip() and not produto_nosso.strip():
+            st.warning("Por favor, digite ao menos o ASIN ou o Título do seu produto.")
         else:
-            st.json(res)
+            try:
+                from modules.listing_agent import analisar_e_otimizar_listing
+                res = analisar_e_otimizar_listing(asin_input.strip(), produto_nosso.strip(), bullet_points_concorrente.strip())
+            except Exception as e:
+                res = f"Erro no processamento: {str(e)}"
+
+            st.success("Diagnóstico concluído com sucesso!")
+            
+            if isinstance(res, str):
+                st.markdown(res)
+            else:
+                st.json(res)
 
 # MÓDULO 2: Precificação e Repricer
 with tab2:
@@ -229,14 +231,6 @@ with tab3:
             msg = f"Ajuste automático concluído: Lances recalculados para atingir a meta de {target_acos}% de ACoS com teto orçamentário de R$ {orcamento_diario}/dia."
             
         st.success(msg)
-        
-        st.markdown("**🎯 Sugestões de Ajuste por Palavra-Chave:**")
-        df_ads = pd.DataFrame([
-            {"Palavra-Chave": "fone bluetooth tws", "Correspondência": "Exata", "Impressões": 14200, "Cliques": 380, "CPC Atual": 1.20, "CPC Sugerido": 1.45, "Ação": "Aumentar Lance (+20.8%)"},
-            {"Palavra-Chave": "fone de ouvido sem fio", "Correspondência": "Frase", "Impressões": 28900, "Cliques": 510, "CPC Atual": 1.85, "CPC Sugerido": 1.30, "Ação": "Reduzir Lance (-29.7%)"},
-            {"Palavra-Chave": "headphone esportivo", "Correspondência": "Ampla", "Impressões": 8500, "Cliques": 95, "CPC Atual": 0.90, "CPC Sugerido": 0.00, "Ação": "Negativar (Sem Vendas)"},
-        ])
-        st.dataframe(df_ads, use_container_width=True)
 
 # MÓDULO 4: Logística
 with tab4:
@@ -308,26 +302,6 @@ with tab4:
         m2.metric("Tarifa FBA (Logística Amazon)", f"R$ {tarifa_fba:.2f}")
         m3.metric("Tarifa DBA (Delivery by Amazon)", f"R$ {tarifa_dba:.2f}")
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        df_logistica = pd.DataFrame([
-            {
-                "Modalidade": "FBA (Fulfillment by Amazon)",
-                "Faixa de Preço": f"R$ {preco_item:.2f}",
-                "Peso Faturável": f"{int(peso_faturavel_g)} g",
-                "Tarifa de Logística": f"R$ {tarifa_fba:.2f}",
-                "Incentivos": "Selo Prime, Armazenamento Integrado, Frete Grátis p/ Cliente"
-            },
-            {
-                "Modalidade": "DBA (Delivery by Amazon)",
-                "Faixa de Preço": f"R$ {preco_item:.2f}",
-                "Peso Faturável": f"{int(peso_faturavel_g)} g",
-                "Tarifa de Logística": f"R$ {tarifa_dba:.2f}",
-                "Incentivos": "Coleta no galpão do vendedor, Etiqueta gerada pela Amazon"
-            }
-        ])
-        st.dataframe(df_logistica, use_container_width=True)
-
 # MÓDULO 5: Reconciliação
 with tab5:
     st.subheader("⚖️ Módulo 5: Reconciliação Financeira e Repasses")
@@ -339,7 +313,7 @@ with tab5:
 # MÓDULO 6: Consultoria Fiscal
 with tab6:
     st.subheader("🏛️ Módulo 6: Consultoria Fiscal (Lucro Real / IBS / CBS)")
-    duvida = st.text_area("Digite a NCM do produto ou sua dúvida tributária:", placeholder="Ex: Qual a tributação de PIS/COFINS no Lucro Real para eletrônicos?")
+    duvida = st.text_area("Digite a NCM do produto ou sua dúvida tributária:", placeholder="Ex: Qual a tributação de PIS/COFINS no Lucro Real para utensílios domésticos?")
     if st.button("Consultar Regras Fiscais", type="primary"):
         res = consultar_regras_fiscais(duvida)
         st.write(res)
