@@ -137,7 +137,7 @@ with tab1:
     
     col_in, col_bt = st.columns([4, 1])
     with col_in:
-        asin_input = st.text_input("Insira o ASIN ou Link da Amazon Brasil", value="B08N5WRWNW")
+        asin_input = st.text_input("Insira o ASIN ou Link da Amazon Brasil", value="B0FP42W12S")
     with col_bt:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         btn_diag = st.button("Executar Diagnóstico", type="primary", use_container_width=True)
@@ -149,22 +149,18 @@ with tab1:
         bullet_points_concorrente = st.text_area("Bullet Points do Concorrente", value="Cancelamento de ruído ativo, Bateria de até 30 horas, Conexão Bluetooth 5.3, Resistente à água IPX5", height=100)
         
     if btn_diag:
-        try:
-            res = analisar_e_otimizar_listing(bullet_points_concorrente, produto_nosso)
-        except TypeError:
-            try:
-                res = analisar_e_otimizar_listing(asin_input, bullet_points_concorrente, produto_nosso)
-            except Exception as e:
-                res = f"Erro no processamento: {str(e)}"
-        except Exception as e:
-            res = f"Erro no processamento: {str(e)}"
+        # Importação direta para garantir a chamada da função atualizada
+        from modules.listing_agent import analisar_e_otimizar_listing
+        
+        termo_entrada = produto_nosso if produto_nosso.strip() else asin_input
+        res = analisar_e_otimizar_listing(asin_input, termo_entrada)
 
         st.success("Diagnóstico concluído com sucesso!")
         
-        if isinstance(res, dict):
-            st.json(res)
-        else:
+        if isinstance(res, str):
             st.markdown(res)
+        else:
+            st.json(res)
 
 # MÓDULO 2: Precificação e Repricer
 with tab2:
