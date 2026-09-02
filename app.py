@@ -171,15 +171,28 @@ with tab1:
 with tab2:
     st.subheader("💰 Módulo 2: Precificação e Motor de Repricer")
     preco_venda = st.slider("Simular Preço de Venda (R$)", min_value=10.0, max_value=500.0, value=89.90, step=1.0)
+    
     if st.button("Calcular Margem e Break-even", type="primary"):
-        res = calcular_precificacao_e_breakeven(preco_venda, custo_unitario, imposto_efetivo, comissao_amazon, tarifa_logistica)
+        try:
+            # Tenta a chamada completa passando todos os parâmetros
+            res = calcular_precificacao_e_breakeven(preco_venda, custo_unitario, imposto_efetivo, comissao_amazon, tarifa_logistica)
+        except TypeError:
+            try:
+                # Fallback para a assinatura padrão (preco, custo)
+                res = calcular_precificacao_e_breakeven(preco_venda, custo_unitario)
+            except Exception as e:
+                res = {"error": str(e)}
+        except Exception as e:
+            res = {"error": str(e)}
+
         if isinstance(res, dict):
             c1, c2 = st.columns(2)
             c1.metric("Lucro Líquido Estimado", f"R$ {res.get('lucro_liquido', 0)}")
             c2.metric("Margem Líquida (%)", f"{res.get('margem_porcentagem', 0)}%")
+            st.json(res)
         else:
-            st.write(res)
-
+            st.markdown(res)
+            
 # MÓDULO 3: Ads
 with tab3:
     st.subheader("📢 Módulo 3: Otimização de Campanhas Amazon Ads")
