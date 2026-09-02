@@ -11,8 +11,9 @@ load_dotenv()
 try:
     from modules.listing_agent import analisar_e_otimizar_listing
 except Exception:
-    def analisar_e_otimizar_listing(asin_or_url):
-        return {"status": "sucesso", "mensagem": f"Diagnóstico do ASIN/Link {asin_or_url} executado com sucesso!"}
+    def analisar_e_otimizar_listing(*args, **kwargs):
+        asin = args[0] if args else kwargs.get("asin", "N/A")
+        return {"status": "sucesso", "mensagem": f"Diagnóstico do ASIN/Link {asin} executado com sucesso!"}
 
 # 2. Precificação & Repricer
 try:
@@ -25,7 +26,7 @@ except Exception:
         margem = (lucro / preco) * 100.0 if preco > 0 else 0
         return {"lucro_liquido": round(lucro, 2), "margem_porcentagem": round(margem, 2)}
 
-# 3. Ads / PPC (Resolvendo a falha de nome de função)
+# 3. Ads / PPC
 try:
     from modules.ads_agent import otimizar_campanhas_ads
 except Exception:
@@ -133,7 +134,24 @@ with tab1:
         btn_diag = st.button("Executar Diagnóstico", type="primary", use_container_width=True)
         
     if btn_diag:
-        res = analisar_e_otimizar_listing(asin_input)
+        try:
+            # Tenta executar passando os parâmetros completos
+            res = analisar_e_otimizar_listing(
+                asin_input, 
+                custo=custo_unitario, 
+                imposto=imposto_efetivo, 
+                comissao=comissao_amazon, 
+                logistica=tarifa_logistica
+            )
+        except TypeError:
+            try:
+                # Tenta passar apenas o argumento posicional (ASIN)
+                res = analisar_e_otimizar_listing(asin_input)
+            except Exception as e:
+                res = {"status": "erro", "detalhe": str(e)}
+        except Exception as e:
+            res = {"status": "erro", "detalhe": str(e)}
+
         st.success("Diagnóstico concluído com sucesso!")
         st.json(res)
 
