@@ -55,7 +55,7 @@ try:
     from modules.tax_consultant_agent import consultar_regras_fiscais
 except Exception:
     def consultar_regras_fiscais(duvida):
-        return f"Análise fiscal concluída para: '{duvida}'. Regime aplicado: Lucro Real."
+        return f"Análise fiscal concluída para: '{duvida}'. Regime applied: Lucro Real."
 
 # 7. Relatórios Executivos
 try:
@@ -149,11 +149,9 @@ with tab1:
         bullet_points_concorrente = st.text_area("Bullet Points do Concorrente", value="Cancelamento de ruído ativo, Bateria de até 30 horas, Conexão Bluetooth 5.3, Resistente à água IPX5", height=100)
         
     if btn_diag:
-        termo_entrada = produto_nosso if produto_nosso.strip() else asin_input
-        
         try:
             from modules.listing_agent import analisar_e_otimizar_listing
-            res = analisar_e_otimizar_listing(asin_input, termo_entrada)
+            res = analisar_e_otimizar_listing(asin_input, produto_nosso)
         except Exception as e:
             res = f"Erro no processamento: {str(e)}"
 
@@ -254,11 +252,10 @@ with tab4:
     preco_item = st.number_input("Preço de Venda do Produto (R$)", min_value=1.0, value=89.90, step=1.0)
         
     if st.button("Calcular Tarifas Oficiais", type="primary"):
-        # Peso Cubado em Gramas: (C x L x A) / 6000 * 1000
         peso_cubado_g = ((comprimento_cm * largura_altura * largura_altura) / 6000.0) * 1000.0
         peso_faturavel_g = max(peso_g, peso_cubado_g)
         
-        # --- LÓGICA OFICIAL FBA (Tabela Amazon Brasil) ---
+        # --- LÓGICA OFICIAL FBA ---
         if preco_item < 79.00:
             if peso_faturavel_g <= 300:
                 tarifa_fba = 5.65
@@ -281,7 +278,7 @@ with tab4:
                 kg_extra = math.ceil((peso_faturavel_g - 5000) / 1000.0)
                 tarifa_fba = 24.05 + (kg_extra * 3.05)
 
-        # --- LÓGICA OFICIAL DBA (Tabela Amazon Brasil) ---
+        # --- LÓGICA OFICIAL DBA ---
         if preco_item < 30.00:
             tarifa_dba = 4.50
         elif preco_item < 50.00:
