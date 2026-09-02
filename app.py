@@ -91,8 +91,17 @@ st.markdown("""
 # --- SIDEBAR: Conexões e Parâmetros Financeiros Globais ---
 with st.sidebar:
     st.header("⚡ Conexão SP-API & Claude")
-    api_key_anthropic = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
-    sp_api_refresh_token = os.getenv("LWA_REFRESH_TOKEN") or st.secrets.get("LWA_REFRESH_TOKEN", "")
+    
+    # Captura e higieniza as chaves removendo espaços e aspas extras
+    raw_api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+    api_key_anthropic = raw_api_key.strip().strip('"').strip("'")
+    
+    raw_refresh_token = os.getenv("LWA_REFRESH_TOKEN") or st.secrets.get("LWA_REFRESH_TOKEN", "")
+    sp_api_refresh_token = raw_refresh_token.strip().strip('"').strip("'")
+    
+    # Injeta a chave sanitizada nas variáveis de ambiente globais do Python
+    if api_key_anthropic:
+        os.environ["ANTHROPIC_API_KEY"] = api_key_anthropic
     
     if api_key_anthropic and sp_api_refresh_token:
         st.success("Conexão Real Ativa (Secrets / .env)")
