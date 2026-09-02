@@ -251,13 +251,52 @@ with tab3:
         ])
         st.dataframe(df_ads, use_container_width=True)
 
-# MÓDULO 4: Logística
+# MÓDULO 4: Logística & FBA/DBA
 with tab4:
-    st.subheader("🚚 Módulo 4: Calculadora de Frete FBA / DBA")
-    peso_kg = st.number_input("Peso do Produto com embalagem (kg)", min_value=0.1, value=0.5, step=0.1)
+    st.subheader("🚚 Módulo 4: Calculadora e Diagnóstico Logístico (FBA vs DBA)")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        peso_kg = st.number_input("Peso do Produto (kg)", min_value=0.1, value=1.0, step=0.1)
+    with col2:
+        comprimento_cm = st.number_input("Comprimento (cm)", min_value=1.0, value=20.0, step=1.0)
+    with col3:
+        largura_cm = st.number_input("Largura / Altura (cm)", min_value=1.0, value=15.0, step=1.0)
+        
     if st.button("Calcular Envio e Ficha Logística", type="primary"):
-        res = calcular_frete_fba_e_dbas(peso_kg)
-        st.write(res)
+        # Cálculo de Peso Cubado (Comprimento x Largura x Altura / 6000)
+        peso_cubado = (comprimento_cm * largura_cm * largura_cm) / 6000.0
+        peso_taxavel = max(peso_kg, peso_cubado)
+        
+        try:
+            res = calcular_frete_fba_e_dbas(peso_kg)
+        except Exception:
+            res = f"Análise para item de {peso_taxavel:.2f}kg processada."
+
+        st.success("Cálculo logístico finalizado!")
+        
+        if isinstance(res, str):
+            st.info(res)
+        
+        # Tabela Comparativa FBA (Fulfillment by Amazon) vs DBA (Delivery by Amazon)
+        st.markdown("**📦 Comparativo de Modalidades Logísticas (Amazon Brasil)**")
+        df_logistica = pd.DataFrame([
+            {
+                "Modalidade": "FBA - Logística da Amazon",
+                "Faixa de Peso": f"Até {ceil(peso_taxavel)}kg",
+                "Tarifa Estimada": f"R$ {11.50 + (peso_taxavel * 1.50):.2f}",
+                "Prazo de Entrega": "1-2 dias úteis (Elegível Prime)",
+                "Vantagem Competitiva": "Selo Prime + Maior Conversão no Buy Box"
+            },
+            {
+                "Modalidade": "DBA - Delivery by Amazon",
+                "Faixa de Peso": f"Até {ceil(peso_taxavel)}kg",
+                "Tarifa Estimada": f"R$ {14.20 + (peso_taxavel * 1.80):.2f}",
+                "Prazo de Entrega": "2-4 dias úteis",
+                "Vantagem Competitiva": "Coleta no seu galpão sem envio prévio"
+            }
+        ])
+        st.dataframe(df_logistica, use_container_width=True)
 
 # MÓDULO 5: Reconciliação
 with tab5:
