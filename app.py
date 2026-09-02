@@ -243,46 +243,91 @@ with tab3:
 
 # MÓDULO 4: Logística
 with tab4:
-    st.subheader("🚚 Módulo 4: Calculadora e Diagnóstico Logístico (FBA vs DBA)")
+    st.subheader("🚚 Módulo 4: Calculadora de Tarifas Oficiais (FBA vs DBA Amazon Brasil)")
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        peso_kg = st.number_input("Peso do Produto (kg)", min_value=0.1, value=1.0, step=0.1)
+        peso_g = st.number_input("Peso Real do Produto (Gramas)", min_value=10, value=300, step=50)
     with col2:
         comprimento_cm = st.number_input("Comprimento (cm)", min_value=1.0, value=20.0, step=1.0)
     with col3:
-        largura_cm = st.number_input("Largura / Altura (cm)", min_value=1.0, value=15.0, step=1.0)
+        largura_altura = st.number_input("Largura / Altura (cm)", min_value=1.0, value=15.0, step=1.0)
         
-    if st.button("Calcular Envio e Ficha Logística", type="primary"):
-        peso_cubado = (comprimento_cm * largura_cm * largura_cm) / 6000.0
-        peso_taxavel = max(peso_kg, peso_cubado)
-        faixa_peso = math.ceil(peso_taxavel)
+    preco_item = st.number_input("Preço de Venda do Produto (R$)", min_value=1.0, value=89.90, step=1.0)
         
-        try:
-            res = calcular_frete_fba_e_dbas(peso_kg)
-        except Exception:
-            res = f"Análise para item de {peso_taxavel:.2f}kg processada."
+    if st.button("Calcular Tarifas Oficiais", type="primary"):
+        # Peso Cubado em Gramas: (C x L x A) / 6000 * 1000
+        peso_cubado_g = ((comprimento_cm * largura_altura * largura_altura) / 6000.0) * 1000.0
+        peso_faturavel_g = max(peso_g, peso_cubado_g)
+        
+        # --- LÓGICA OFICIAL FBA (Tabela Amazon Brasil) ---
+        if preco_item < 79.00:
+            if peso_faturavel_g <= 300:
+                tarifa_fba = 5.65
+            elif peso_faturavel_g <= 500:
+                tarifa_fba = 5.85
+            else:
+                tarifa_fba = 6.05
+        else:
+            if peso_faturavel_g <= 300:
+                tarifa_fba = 10.95
+            elif peso_faturavel_g <= 500:
+                tarifa_fba = 11.95
+            elif peso_faturavel_g <= 1000:
+                tarifa_fba = 12.45
+            elif peso_faturavel_g <= 2000:
+                tarifa_fba = 13.05
+            elif peso_faturavel_g <= 5000:
+                tarifa_fba = 16.05
+            else:
+                kg_extra = math.ceil((peso_faturavel_g - 5000) / 1000.0)
+                tarifa_fba = 24.05 + (kg_extra * 3.05)
 
-        st.success("Cálculo logístico finalizado!")
+        # --- LÓGICA OFICIAL DBA (Tabela Amazon Brasil) ---
+        if preco_item < 30.00:
+            tarifa_dba = 4.50
+        elif preco_item < 50.00:
+            tarifa_dba = 6.50
+        elif preco_item < 79.00:
+            tarifa_dba = 6.75
+        else:
+            if peso_faturavel_g <= 250:
+                tarifa_dba = 11.95
+            elif peso_faturavel_g <= 500:
+                tarifa_dba = 12.85
+            elif peso_faturavel_g <= 1000:
+                tarifa_dba = 13.45
+            elif peso_faturavel_g <= 2000:
+                tarifa_dba = 14.00
+            elif peso_faturavel_g <= 5000:
+                tarifa_dba = 17.00
+            else:
+                kg_extra = math.ceil((peso_faturavel_g - 5000) / 1000.0)
+                tarifa_dba = 25.00 + (kg_extra * 3.05)
+
+        st.success("Tarifas calculadas conforme as regras vigentes da Amazon Brasil!")
         
-        if isinstance(res, str):
-            st.info(res)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Peso Faturável (Gramas)", f"{int(peso_faturavel_g)} g")
+        m2.metric("Tarifa FBA (Logística Amazon)", f"R$ {tarifa_fba:.2f}")
+        m3.metric("Tarifa DBA (Delivery by Amazon)", f"R$ {tarifa_dba:.2f}")
+
+        st.markdown("<br>", unsafe_allow_html=True)
         
-        st.markdown("**📦 Comparativo de Modalidades Logísticas (Amazon Brasil)**")
         df_logistica = pd.DataFrame([
             {
-                "Modalidade": "FBA - Logística da Amazon",
-                "Faixa de Peso": f"Até {faixa_peso}kg",
-                "Tarifa Estimada": f"R$ {11.50 + (peso_taxavel * 1.50):.2f}",
-                "Prazo de Entrega": "1-2 dias úteis (Elegível Prime)",
-                "Vantagem Competitiva": "Selo Prime + Maior Conversão no Buy Box"
+                "Modalidade": "FBA (Fulfillment by Amazon)",
+                "Faixa de Preço": f"R$ {preco_item:.2f}",
+                "Peso Faturável": f"{int(peso_faturavel_g)} g",
+                "Tarifa de Logística": f"R$ {tarifa_fba:.2f}",
+                "Incentivos": "Selo Prime, Armazenamento Integrado, Frete Grátis p/ Cliente"
             },
             {
-                "Modalidade": "DBA - Delivery by Amazon",
-                "Faixa de Peso": f"Até {faixa_peso}kg",
-                "Tarifa Estimada": f"R$ {14.20 + (peso_taxavel * 1.80):.2f}",
-                "Prazo de Entrega": "2-4 dias úteis",
-                "Vantagem Competitiva": "Coleta no seu galpão sem envio prévio"
+                "Modalidade": "DBA (Delivery by Amazon)",
+                "Faixa de Preço": f"R$ {preco_item:.2f}",
+                "Peso Faturável": f"{int(peso_faturavel_g)} g",
+                "Tarifa de Logística": f"R$ {tarifa_dba:.2f}",
+                "Incentivos": "Coleta no galpão do vendedor, Etiqueta gerada pela Amazon"
             }
         ])
         st.dataframe(df_logistica, use_container_width=True)
