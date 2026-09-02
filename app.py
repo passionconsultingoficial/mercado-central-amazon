@@ -1,4 +1,5 @@
 import os
+import math
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
@@ -18,7 +19,7 @@ except Exception:
 try:
     from modules.pricing_agent import calcular_precificacao_e_breakeven
 except Exception:
-    def calcular_precificacao_e_breakeven(preco, custo, imposto, comissao, logistica):
+    def calcular_precificacao_e_breakeven(preco, custo=25.0, imposto=12.0, comissao=15.0, logistica=11.5):
         imp = preco * (imposto / 100.0)
         com = preco * (comissao / 100.0)
         lucro = preco - (custo + imp + com + logistica)
@@ -99,7 +100,6 @@ with st.sidebar:
     raw_refresh_token = os.getenv("LWA_REFRESH_TOKEN") or st.secrets.get("LWA_REFRESH_TOKEN", "")
     sp_api_refresh_token = raw_refresh_token.strip().strip('"').strip("'")
     
-    # Injeta a chave sanitizada nas variáveis de ambiente globais do Python
     if api_key_anthropic:
         os.environ["ANTHROPIC_API_KEY"] = api_key_anthropic
     
@@ -161,7 +161,6 @@ with tab1:
 
         st.success("Diagnóstico concluído com sucesso!")
         
-        # Trata o formato de exibição para evitar o erro de JSON Parse
         if isinstance(res, dict):
             st.json(res)
         else:
@@ -182,22 +181,18 @@ with tab2:
         }
         
         try:
-            # 1ª Tentativa: Passa apenas o dicionário de dados (1 argumento)
             res = calcular_precificacao_e_breakeven(dados_produto)
         except TypeError:
             try:
-                # 2ª Tentativa: Passa argumentos posicionais completos
                 res = calcular_precificacao_e_breakeven(preco_venda, custo_unitario, imposto_efetivo, comissao_amazon, tarifa_logistica)
             except TypeError:
                 try:
-                    # 3ª Tentativa: Passa apenas o preço de venda
-                    res = calcular_precificacao_e_breakeven(preco_venda)
+                    res = calcular_precificacao_e_breakeven(preco_venda, custo_unitario)
                 except Exception as e:
                     res = {"error": str(e)}
         except Exception as e:
             res = {"error": str(e)}
 
-        # Exibição dos Resultados
         if isinstance(res, dict) and "error" not in res:
             c1, c2 = st.columns(2)
             c1.metric("Lucro Líquido Estimado", f"R$ {res.get('lucro_liquido', res.get('lucro', 0))}")
@@ -208,11 +203,10 @@ with tab2:
         else:
             st.markdown(res)
 
-# MÓDULO 3: Ads (PPC)
+# MÓDULO 3: Ads
 with tab3:
     st.subheader("📢 Módulo 3: Otimização Avançada de Amazon Ads (PPC)")
     
-    # 1. Painel de Parâmetros da Campanha
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         target_acos = st.slider("Target ACoS Desejado (%)", 5, 50, 15)
@@ -222,8 +216,6 @@ with tab3:
         estrategia_lance = st.selectbox("Estratégia de Lances", ["Dinamicos - Apenas Reduzir", "Dinamicos - Aumentar e Reduzir", "Lances Fixos"])
 
     st.markdown("---")
-    
-    # 2. Métricas Atuais da Campanha (Simuladas / SP-API)
     st.markdown("**📊 Desempenho Atual da Campanha**")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Vendas PPC", "R$ 4.850,00", "+12%")
@@ -233,7 +225,6 @@ with tab3:
 
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 3. Botão de Execução e Otimização
     if st.button("🚀 Processar Otimização Algorítmica de Lances", type="primary"):
         try:
             msg = otimizar_campanhas_ads(target_acos)
@@ -242,7 +233,6 @@ with tab3:
             
         st.success(msg)
         
-        # Exibe Tabela de Sugestões de Ajuste de Lances
         st.markdown("**🎯 Sugestões de Ajuste por Palavra-Chave:**")
         df_ads = pd.DataFrame([
             {"Palavra-Chave": "fone bluetooth tws", "Correspondência": "Exata", "Impressões": 14200, "Cliques": 380, "CPC Atual": 1.20, "CPC Sugerido": 1.45, "Ação": "Aumentar Lance (+20.8%)"},
@@ -251,7 +241,7 @@ with tab3:
         ])
         st.dataframe(df_ads, use_container_width=True)
 
-# MÓDULO 4: Logística & FBA/DBA
+# MÓDULO 4: Logística
 with tab4:
     st.subheader("🚚 Módulo 4: Calculadora e Diagnóstico Logístico (FBA vs DBA)")
     
@@ -264,9 +254,9 @@ with tab4:
         largura_cm = st.number_input("Largura / Altura (cm)", min_value=1.0, value=15.0, step=1.0)
         
     if st.button("Calcular Envio e Ficha Logística", type="primary"):
-        # Cálculo de Peso Cubado (Comprimento x Largura x Altura / 6000)
         peso_cubado = (comprimento_cm * largura_cm * largura_cm) / 6000.0
         peso_taxavel = max(peso_kg, peso_cubado)
+        faixa_peso = math.ceil(peso_taxavel)
         
         try:
             res = calcular_frete_fba_e_dbas(peso_kg)
@@ -278,19 +268,18 @@ with tab4:
         if isinstance(res, str):
             st.info(res)
         
-        # Tabela Comparativa FBA (Fulfillment by Amazon) vs DBA (Delivery by Amazon)
         st.markdown("**📦 Comparativo de Modalidades Logísticas (Amazon Brasil)**")
         df_logistica = pd.DataFrame([
             {
                 "Modalidade": "FBA - Logística da Amazon",
-                "Faixa de Peso": f"Até {ceil(peso_taxavel)}kg",
+                "Faixa de Peso": f"Até {faixa_peso}kg",
                 "Tarifa Estimada": f"R$ {11.50 + (peso_taxavel * 1.50):.2f}",
                 "Prazo de Entrega": "1-2 dias úteis (Elegível Prime)",
                 "Vantagem Competitiva": "Selo Prime + Maior Conversão no Buy Box"
             },
             {
                 "Modalidade": "DBA - Delivery by Amazon",
-                "Faixa de Peso": f"Até {ceil(peso_taxavel)}kg",
+                "Faixa de Peso": f"Até {faixa_peso}kg",
                 "Tarifa Estimada": f"R$ {14.20 + (peso_taxavel * 1.80):.2f}",
                 "Prazo de Entrega": "2-4 dias úteis",
                 "Vantagem Competitiva": "Coleta no seu galpão sem envio prévio"
