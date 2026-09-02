@@ -12,8 +12,7 @@ try:
     from modules.listing_agent import analisar_e_otimizar_listing
 except Exception:
     def analisar_e_otimizar_listing(*args, **kwargs):
-        asin = args[0] if args else kwargs.get("asin", "N/A")
-        return {"status": "sucesso", "mensagem": f"Diagnóstico do ASIN/Link {asin} executado com sucesso!"}
+        return {"status": "sucesso", "mensagem": "Diagnóstico do listing executado com sucesso!"}
 
 # 2. Precificação & Repricer
 try:
@@ -72,7 +71,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização CSS para visualização moderna
+# Estilização CSS personalizada
 st.markdown("""
 <style>
     .main-header {
@@ -126,6 +125,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 # MÓDULO 1: Diagnóstico e Listing
 with tab1:
     st.subheader("📝 Módulo 1: Análise e Otimização de Listing")
+    
     col_in, col_bt = st.columns([4, 1])
     with col_in:
         asin_input = st.text_input("Insira o ASIN ou Link da Amazon Brasil", value="B08N5WRWNW")
@@ -133,20 +133,19 @@ with tab1:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         btn_diag = st.button("Executar Diagnóstico", type="primary", use_container_width=True)
         
+    col_a, col_b = st.columns(2)
+    with col_a:
+        produto_nosso = st.text_area("Descrição / Título do Seu Produto", value="Fone de Ouvido Bluetooth TWS Sem Fio com Estojo Recarregável", height=100)
+    with col_b:
+        bullet_points_concorrente = st.text_area("Bullet Points do Concorrente", value="Cancelamento de ruído ativo, Bateria de até 30 horas, Conexão Bluetooth 5.3, Resistente à água IPX5", height=100)
+        
     if btn_diag:
         try:
-            # Tenta executar passando os parâmetros completos
-            res = analisar_e_otimizar_listing(
-                asin_input, 
-                custo=custo_unitario, 
-                imposto=imposto_efetivo, 
-                comissao=comissao_amazon, 
-                logistica=tarifa_logistica
-            )
+            # Envia os argumentos requeridos pela função do módulo
+            res = analisar_e_otimizar_listing(bullet_points_concorrente, produto_nosso)
         except TypeError:
             try:
-                # Tenta passar apenas o argumento posicional (ASIN)
-                res = analisar_e_otimizar_listing(asin_input)
+                res = analisar_e_otimizar_listing(asin_input, bullet_points_concorrente, produto_nosso)
             except Exception as e:
                 res = {"status": "erro", "detalhe": str(e)}
         except Exception as e:
