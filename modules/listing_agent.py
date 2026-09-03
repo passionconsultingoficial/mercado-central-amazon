@@ -43,9 +43,10 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
         client = Anthropic(api_key=api_key.strip())
         media_type = mime_type if mime_type in ["image/jpeg", "image/png", "image/gif", "image/webp"] else "image/jpeg"
 
+        # IDs de modelos estáveis da Anthropic com suporte a Visão
         modelos = [
-            "claude-3-5-sonnet-latest",
-            "claude-3-5-sonnet-20241022",
+            "claude-3-5-sonnet-20240620",
+            "claude-3-sonnet-20240229",
             "claude-3-haiku-20240307"
         ]
 
@@ -214,15 +215,15 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
     links_md += "\n---\n\n"
 
     prompt_mestre = (
-        f"Você é o Maior Especialista em SEO, Copywriting de Alta Conversão e Algoritmo A10 da Amazon Brasil.\n\n"
+        f"Você é o Maior Especialista em SEO e Copywriting de Alta Conversão para E-commerce na Amazon Brasil.\n\n"
         f"📌 DADOS PARA ANÁLISE COMPARATIVA E CRIAÇÃO COMPLETA DO ANÚNCIO:\n"
         f"- Produto Alvo / Categoria: {termo_exibicao}\n"
         f"- Concorrente Líder Orgânico Mapeado: {dados_lider['titulo_lider']} (ASIN: {dados_lider['asin_lider']} | Preço Praticado: {dados_lider['preco_lider']})\n\n"
-        "GERE A RESPOSTA COMPLETA E DETALHADA EM MARKDOWN SEGUINDO ESTRITAMENTE A ESTRUTURA DE 9 SEÇÕES ABAIXO:\n\n"
+        "GERE A RESPOSTA COMPLETA E DETALHADA EM MARKDOWN SEGUINDO ESTRITAMENTE A ESTRUTURA ABAIXO:\n\n"
         "### 📋 Relatório Comparativo: Nosso Produto vs. Líder de Vendas Orgânico\n\n"
         "| Métrica / Atributo | Concorrente Líder (Amazon BR) | Nossa Estratégia de Produto |\n"
         "| :--- | :--- | :--- |\n"
-        f"| **Anúncio Benchmark** | [{dados_lider['titulo_lider']}]({dados_lider['link_lider']}) | Otimização Técnica A10 |\n"
+        f"| **Anúncio Benchmark** | [{dados_lider['titulo_lider']}]({dados_lider['link_lider']}) | Otimização Estratégica Completa |\n"
         f"| **ASIN** | `{dados_lider['asin_lider']}` | Novo Listing Otimizado |\n"
         f"| **Preço Estimado** | `{dados_lider['preco_lider']}` | Posicionamento Estratégico |\n"
         "| **Pontos Fortes do Líder** | Alta autoridade de vendas acumuladas e posição orgânica consolidada. | Diferenciação de atributos, clareza de material e copy persuasiva. |\n"
@@ -264,11 +265,13 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
     erros_detalhados = []
     try:
         client = Anthropic(api_key=api_key.strip())
-        for model_name in [
-            "claude-3-5-sonnet-latest",
-            "claude-3-5-sonnet-20241022",
+        # Modelos válidos testados na API Anthropic
+        modelos_validos = [
+            "claude-3-5-sonnet-20240620",
+            "claude-3-sonnet-20240229",
             "claude-3-haiku-20240307",
-        ]:
+        ]
+        for model_name in modelos_validos:
             try:
                 res = client.messages.create(
                     model=model_name,
@@ -285,7 +288,7 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
 
 
 def render_module_1():
-    st.subheader("📦 Módulo 1: Análise e Otimização de Listing A10")
+    st.subheader("📦 Módulo 1: Análise e Otimização de Listing")
 
     metodo_pesquisa = st.radio(
         "Como deseja buscar o produto?",
@@ -323,6 +326,6 @@ def render_module_1():
         if not termo_final:
             st.warning("Por favor, digite um produto ou faça o upload de uma imagem válida.")
         else:
-            with st.spinner(f"Analisando melhor vendedor orgânico e gerando anúncio A10 completo para '{termo_final}'..."):
+            with st.spinner(f"Analisando melhor vendedor orgânico e gerando anúncio completo para '{termo_final}'..."):
                 resultado = processar_e_gerar_markdown(termo_final)
                 st.markdown(resultado)
