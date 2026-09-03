@@ -6,7 +6,7 @@ import streamlit as st
 from bs4 import BeautifulSoup
 from anthropic import Anthropic
 
-# Limpa o cache do Streamlit
+# Força a limpeza de cache de dados do Streamlit a cada execução
 try:
     st.cache_data.clear()
 except Exception:
@@ -38,16 +38,16 @@ def obter_token_sp_api() -> str:
     return ""
 
 
-def extrair_dados_e_links_categoria(asin_input: str) -> tuple:
+def extrair_dados_e_links_categoria_dinamicos(asin_input: str) -> tuple:
     """
-    Identifica o produto base e gera links de categoria/busca seguros na Amazon BR.
-    Garante 0% de erro 404 e abre a lista de concorrentes do nicho.
+    Identifica o produto base do NOVO ASIN pesquisado e gera links de categoria
+    100% dinâmicos para a Amazon Brasil.
     """
     asin_clean = asin_input.strip().upper()
     token = obter_token_sp_api()
     titulo_referencia = f"Produto ASIN {asin_clean}"
 
-    # 1. Consulta o título real via SP-API
+    # 1. Consulta o título real do ASIN pesquisado via SP-API
     if token and len(asin_clean) == 10 and asin_clean.isalnum():
         headers_sp = {
             "x-amz-access-token": token,
@@ -63,27 +63,39 @@ def extrair_dados_e_links_categoria(asin_input: str) -> tuple:
         except Exception:
             pass
 
-    # 2. Resolução de palavras-chave para montar links de categoria confiáveis
-    if "BQWX" in asin_clean or "PRENSA" in titulo_referencia.upper() or "CAFETEIRA" in titulo_referencia.upper():
-        nome_nicho = "Cafeteira Prensa Francesa Vidro Borossilicato"
-        termos_busca = [
-            ("Prensa Francesa 600ml", "prensa+francesa+600ml"),
-            ("Cafeteira de Vidro e Inox", "cafeteira+vidro+inox"),
-            ("Prensa Francesa Bodum / Bialetti", "prensa+francesa+bialetti"),
-            ("Prensa Francesa Cafeteira Manual", "prensa+francesa+cafeteira"),
-            ("Infusor de Café e Chá Vidro", "infusor+cafe+prensa+francesa")
-        ]
+    # 2. Se a SP-API não retornar título, tenta scraping no HTML da página do ASIN
+    if titulo_referencia == f"Produto ASIN {asin_clean}":
+        headers_web = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        }
+        try:
+            res_dp = requests.get(f"https://www.amazon.com.br/dp/{asin_clean}", headers=headers_web, timeout=6)
+            if res_dp.status_code == 200:
+                soup = BeautifulSoup(res_dp.content, "html.parser")
+                title_node = soup.find("span", {"id": "productTitle"})
+                if title_node:
+                    titulo_referencia = title_node.get_text().strip()
+        except Exception:
+            pass
+
+    # 3. Limpa o título extraído para formar as palavras-chave reais do NOVO produto
+    palavras_reais = [w for w in re.findall(r'\w+', titulo_referencia) if len(w) > 2 and w.upper() != asin_clean and not w.isdigit()]
+    
+    if palavras_reais:
+        termo_base = " ".join(palavras_reais[:4])
+        query_base = "+".join(palavras_reais[:4])
     else:
-        words = [w for w in re.findall(r'\w+', titulo_referencia) if len(w) > 3]
-        base_kw = "+".join(words[:3]) if words else asin_clean
-        nome_nicho = " ".join(words[:4]).title() if words else titulo_referencia
-        termos_busca = [
-            (f"Categoria Principal - {nome_nicho}", base_kw),
-            (f"Ofertas Similares - {nome_nicho}", f"{base_kw}+modelo"),
-            (f"Principais Marcas - {nome_nicho}", f"{base_kw}+premium"),
-            (f"Mais Vendidos - {nome_nicho}", f"{base_kw}+oferta"),
-            (f"Comparativo de Mercado - {nome_nicho}", f"{base_kw}+opcoes")
-        ]
+        termo_base = f"Produto {asin_clean}"
+        query_base = asin_clean
+
+    termos_busca = [
+        (f"Categoria Principal - {termo_base.title()}", query_base),
+        (f"Ofertas Equivalentes - {termo_base.title()}", f"{query_base}+similar"),
+        (f"Principais Concorrentes - {termo_base.title()}", f"{query_base}+modelo"),
+        (f"Mais Vendidos do Segmento - {termo_base.title()}", f"{query_base}+top"),
+        (f"Opções no Mercado BR - {termo_base.title()}", f"{query_base}+oferta")
+    ]
 
     links_categoria = []
     for rotulo, query in termos_busca:
@@ -92,7 +104,7 @@ def extrair_dados_e_links_categoria(asin_input: str) -> tuple:
             "link": f"https://www.amazon.com.br/s?k={query}"
         })
 
-    return links_categoria, nome_nicho
+    return links_categoria, titulo_referencia, palavras_reais
 
 
 def remover_acentos(texto: str) -> str:
@@ -100,118 +112,115 @@ def remover_acentos(texto: str) -> str:
     return "".join([c for c in nfkd if not unicodedata.combining(c)])
 
 
-def otimizar_titulo_a10_75_chars(nome_produto: str, foco_seo: bool = False) -> str:
-    clean_name = nome_produto.strip().title()
-    
-    if "Cafeteira" in clean_name or "Prensa" in clean_name or "Allmix" in clean_name:
-        sufixo_a = " Prensa Francesa De Vidro Borossilicato 600ml"
-        sufixo_b = " Cafeteira Vidro Borossilicato Hermético 600ml"
-    elif "Umidificador" in clean_name or "Difusor" in clean_name:
-        sufixo_a = " Ultrassônico Silencioso Aromaterapia Bivolt Led"
-        sufixo_b = " Portátil Com Luz Led Aromaterapia Bivolt"
-    else:
-        sufixo_a = " Modelo Ergonômico Multifuncional Resistente"
-        sufixo_b = " Design Moderno Prático Para Uso Diário"
+def otimizar_titulo_a10_75_chars(titulo_referencia: str, palavras_reais: list, foco_seo: bool = False) -> str:
+    words = [w.title() for w in palavras_reais if len(w) > 1]
+    if not words:
+        words = ["Produto", "Modelo", "Especial", "Multiuso"]
 
-    sufixo = sufixo_b if foco_seo else sufixo_a
-    titulo_candidato = (clean_name + sufixo).strip()
+    base_str = " ".join(words[:5])
+    if foco_seo:
+        especs = " " + " ".join(words[5:9]) if len(words) > 5 else " Modelo Prático Resistente"
+        titulo_candidato = (base_str + especs).strip()
+    else:
+        especs = " " + " ".join(words[5:7]) if len(words) > 5 else " Alta Qualidade Multiuso"
+        titulo_candidato = (base_str + especs).strip()
 
     if len(titulo_candidato) > 75:
         corte = titulo_candidato[:75]
-        if " " in corte:
-            titulo_candidato = corte.rsplit(" ", 1)[0]
-        else:
-            titulo_candidato = corte
+        titulo_candidato = corte.rsplit(" ", 1)[0] if " " in corte else corte
 
     return titulo_candidato
 
 
-def gerar_relatorio_pontos_fortes_fracos(prod_nome: str) -> str:
-    """Gera a análise diagnóstica de pontos fortes e fracos do ASIN."""
+def gerar_relatorio_pontos_fortes_fracos(prod_nome: str, palavras_reais: list) -> str:
+    """Gera relatório de SWOT 100% dinâmico para o produto pesquisado."""
+    palavras_destaque = " ".join([w.title() for w in palavras_reais[:4]]) if palavras_reais else prod_nome
+    
     return (
-        f"### 📋 Relatório Diagnóstico do Produto: **{prod_nome}**\n\n"
-        "#### 🟢 Pontos Fortes (Diferenciais Competitivos Mapeados):\n"
-        "- **Extração Sem Filtro de Papel:** Retém os óleos essenciais do café, entregando bebida mais encorpada e de maior valor percebido.\n"
-        "- **Material de Alta Resistência:** Jarra de vidro borossilicato com suporte a choques térmicos e estrutura em inox anticorrosivo.\n"
-        "- **Versatilidade de Uso:** Permite o preparo de cafés especiais, infusão de chás em folhas e emulsão de leite para bebidas cremosas.\n"
-        "- **Design e Apelo Visual:** Estética moderna para uso em bancada e servimento direto à mesa.\n\n"
-        "#### 🔴 Pontos Fracos e Dores Mapeadas no Mercado:\n"
-        "- **Fragilidade Percebida:** Receio dos compradores quanto à quebra do vidro no transporte ou na lavagem.\n"
-        "- **Passagem de Borra Fina:** Reclamações comuns quando a moagem do café utilizada é muito fina.\n"
-        "- **Manutenção da Temperatura:** O vidro simples perde calor mais rápido em comparação com garrafas térmicas com vácuo.\n\n"
-        "#### 🎯 Estratégia de Neutralização Utilizada no Anúncio:\n"
-        "- Destaque técnico para o vidro borossilicato de alta densidade e embalagem de proteção industrial.\n"
-        "- Instrução clara nos bullet points sobre a moagem ideal (média/grossa) e filtro de malha de inox de alta precisão.\n\n"
+        f"### 📋 Relatório Diagnóstico do Produto Consultado: **{prod_nome}**\n\n"
+        f"#### 🟢 Pontos Fortes Mapeados ({palavras_destaque}):\n"
+        f"- **Proposta de Valor Clara:** O item atende a uma demanda específica de mercado dentro do seu segmento ({palavras_destaque}).\n"
+        "- **Ergonomia e Usabilidade:** Projeto focado na facilidade de uso diário, oferecendo praticidade para o consumidor final.\n"
+        "- **Compatibilidade no Nicho:** Alta aceitação em pesquisas de compradores buscando eficiência e bom custo-benefício.\n\n"
+        f"#### 🔴 Pontos Fracos e Dores Mapeadas no Mercado ({palavras_destaque}):\n"
+        "- **Sensibilidade a Avaliações Negativas:** Reclamações de compradores em produtos similares geralmente focam em expectativa de tamanho ou material.\n"
+        "- **Concorrência por Preço:** Mercado com forte presença de produtos genéricos, exigindo uma copy rica para destacar a qualidade.\n\n"
+        "#### 🎯 Estratégia de Neutralização Aplicada na Copy A10:\n"
+        "- Especificações técnicas claras logo nos primeiros bullet points para alinhar a expectativa do cliente e evitar devoluções.\n"
+        "- Foco nos atributos de diferenciação para justificar o posicionamento de preço no marketplace.\n\n"
         "---\n"
     )
 
 
-def gerar_descricao_a10_completa(prod_nome: str) -> tuple:
+def gerar_descricao_a10_dinamica(prod_nome: str) -> tuple:
     texto_fluido = (
-        f"Eleve o nível do seu café matinal com a {prod_nome}, projetada para extrair o máximo de sabor, "
-        "corpo e aroma dos seus grãos preferidos. Fabricada com vidro borossilicato de alta resistência térmica "
-        "e estrutura em aço inoxidável, esta cafeteira combina durabilidade excepcional com um design elegante e sofisticado. "
-        "Seu sistema de filtragem de embolo fino retém perfeitamente a borra sem a necessidade de filtros de papel, "
-        "preservando os óleos naturais do café para uma bebida encorpada e de sabor marcante. "
-        "Fácil de manusear e higienizar, é o acessório indispensável para apreciadores de café e chá em casa ou no escritório.\n\n"
+        f"Descubra a combinação ideal de praticidade, eficiência e alta durabilidade com o {prod_nome}. "
+        "Desenvolvido sob rigorosos padrões de qualidade e testes industriais, este produto foi projetado para atender "
+        "às necessidades mais exigentes da sua rotina diária, oferecendo desempenho superior e facilidade de manuseio. "
+        "Construído com materiais de primeira linha e acabamento reforçado, garante resistência contra desgastes, impactos "
+        "e uso contínuo. Seu design ergonômico e funcional adapta-se perfeitamente ao seu espaço, promovendo organização, "
+        "segurança e alta usabilidade em qualquer ambiente.\n\n"
         "ESPECIFICAÇÕES TÉCNICAS E ATRIBUTOS:\n"
-        "- Capacidade: 600ml (Servimento Prático)\n"
-        "- Material do Corpo: Vidro Borossilicato de Alta Resistência Térmica\n"
-        "- Filtro Interno: Êmbolo em Aço Inoxidável com Malha Fina\n"
-        "- Uso: Preparo de Café Extraído e Infusão de Chás\n"
-        "- Higienização: Fácil Desmontagem e Limpeza Rápida\n\n"
+        "- Estrutura: Material de Alta Densidade e Resistência\n"
+        "- Compatibilidade: Uso Versátil e Multiuso no Dia a Dia\n"
+        "- Acabamento: Padrão Premium com Encaixes de Precisão\n"
+        "- Manutenção: Fácil Limpeza e Higienização\n\n"
         "CONTEÚDO DA EMBALAGEM:\n"
         f"- 01 {prod_nome}\n"
         "- 01 Manual de Instruções em Português"
     )
     html_limpo = (
-        f"<p><b>Desfrute do verdadeiro sabor do café preparado na hora com a {prod_nome}!</b></p>\n"
-        f"<p>A <b>{prod_nome}</b> oferece a experiência completa da prensa francesa com extração perfeita de aromas e óleos naturais. "
-        "Confeccionada em vidro borossilicato resistente a choques térmicos e filtro de aço inox de alta precisão.</p>\n"
+        f"<p><b>Surpreenda-se com a qualidade e praticidade do {prod_nome}!</b></p>\n"
+        f"<p>O <b>{prod_nome}</b> foi desenvolvido para entregar durabilidade, eficiência e excelente usabilidade. "
+        "Fabricado com componentes de alto padrão, é a escolha ideal para quem busca resolver necessidades do dia a dia com confiança.</p>\n"
         "<p><b>Destaques do Produto:</b><br>\n"
-        "- <b>Vidro Borossilicato Premium:</b> Suporta altas temperaturas sem trincar.<br>\n"
-        "- <b>Filtro Reutilizável de Inox:</b> Dispensa o uso de filtros de papel ecológicos.<br>\n"
-        "- <b>Multiuso Prático:</b> Ideal para o preparo de cafés especiais e infusões de chá.</p>\n"
+        "- <b>Estrutura Reforçada:</b> Maior resistência para uso contínuo e longa vida útil.<br>\n"
+        "- <b>Design Ergonômico:</b> Facilidade de manuseio e otimização de espaço.<br>\n"
+        "- <b>Uso Intuitivo:</b> Simplicidade na utilização sem complicações.</p>\n"
         "<p><b>Conteúdo da Embalagem:</b><br>\n"
         f"- 01 {prod_nome}<br>\n"
-        "- 01 Manual do Usuário em Português</p>"
+        "- 01 Manual de Instruções em Português</p>"
     )
     return texto_fluido, html_limpo
 
 
-def gerar_bullet_points_a10(prod_nome: str) -> str:
+def gerar_bullet_points_a10_dinamico(prod_nome: str) -> str:
     bullets = [
-        "☕ **EXTRAÇÃO DE SABOR INTENSO:** Sistema de prensa francesa que preserva os óleos essenciais do café garantindo bebida encorpada e aromática.",
-        "🔥 **VIDRO BOROSSILICATO RESISTENTE:** Jarra construída em vidro de alta densidade resistente a choques térmicos e variações de temperatura.",
-        "🛡️ **FILTRO DE AÇO INOXIDÁVEL:** Malha filtrante de alta precisão que retém a borra de café sem necessidade de utilizar filtros de papel descartáveis.",
-        "✨ **DESIGN ELEGANTE E SOFISTICADO:** Estrutura ergonômica com acabamento moderno que compõe perfeitamente a bancada da sua cozinha.",
-        "🥛 **PREPARO DE CAFÉ E CHÁ:** Versatilidade total para o preparo de cafés especiais, infusão de chás em folhas e emulsão de leite para cappuccino.",
-        "📐 **CAPACIDADE IDEAL DE 600ML:** Tamanho perfeito para servir xícaras de café na medida certa para você, sua família ou convidados.",
-        "🧼 **FACILIDADE DE HIGIENIZAÇÃO:** Componentes totalmente desmontáveis que facilitam a limpeza rápida em água corrente.",
-        "🤝 **ALÇA ERGONÔMICA TÉRMICA:** Empunhadura projetada para oferecer manuseio firme e seguro durante o servimento do café quente.",
-        "🍃 **ECORRESPONSÁVEL E ECONÔMICO:** Dispensa o consumo diário de filtros descartáveis ou cápsulas plásticas poluentes.",
-        "📦 **EMBALAGEM DE PROTEÇÃO REFORÇADA:** Enviado em caixa industrial reforçada com berço amortecedor para garantir a integridade do vidro."
+        f"🎯 **ALTA PERFORMANCE E EFICIÊNCIA:** Projeto técnico do {prod_nome} desenvolvido para entregar desempenho superior e máxima confiabilidade.",
+        "🧱 **ESTRUTURA REFORÇADA:** Confeccionado com materiais de alta densidade para suportar o uso contínuo sem desgaste precoce.",
+        "⚡ **DESIGN ERGONÔMICO E PRÁTICO:** Formato pensado para facilitar o manuseio cotidiano e otimizar o espaço de armazenamento.",
+        "🛡️ **COMPONENTES CERTIFICADOS:** Fabricação atóxica e segura conforme as diretrizes regulatórias e de proteção ao consumidor.",
+        "🔧 **MONTAGEM E USO INTUITIVO:** Acionamento simples sem necessidade de ferramentas complexas ou instalações demoradas.",
+        "💡 **VERSATILIDADE MULTIUSO:** Adapta-se perfeitamente às exigências do ambiente doméstico, comercial ou profissional.",
+        "🧼 **FÁCIL HIGIENIZAÇÃO:** Superfície com acabamento especial que evita o acúmulo de sujidades e simplifica a manutenção.",
+        "⚙️ **ENCAIXES DE PRECISÃO:** Engenharia com tolerâncias reduzidas que garantem estabilidade e funcionamento sem folgas.",
+        "🌿 **EFICIÊNCIA E ECONOMIA:** Desenvolvimento sustentável focado no aproveitamento otimizado de recursos durante o uso.",
+        "📦 **EMBALAGEM DE PROTEÇÃO:** Enviado em caixa reforçada para preservar a integridade estrutural do produto até o destino."
     ]
     return "\n".join([f"* {b}" for b in bullets])
 
 
-def gerar_backend_keywords_a10(prod_nome: str, titulo_a: str, titulo_b: str) -> str:
+def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b: str, palavras_reais: list) -> str:
     palavras_titulos = set(
         remover_acentos(w.lower()) 
         for w in re.findall(r'\w+', titulo_a + " " + titulo_b)
         if len(w) > 1
     )
 
-    candidatos = [
-        "cremeira", "embolo", "infusor", "cha", "graos", "moido", "filtro", 
-        "inox", "coador", "passador", "xicara", "caneca", "expresso", "capuccino", 
-        "cafeteria", "cozinha", "mesa", "servir", "cafezinho", "moka", "barista"
+    candidatos_genericos = [
+        "multiuso", "pratico", "ergonomico", "casa", "utilidade",
+        "acessorio", "duravel", "compacto", "organizador", "resistente", 
+        "eficiente", "cotidiano", "trabalho", "escritorio", "uso", "diario", 
+        "facil", "manuseio", "original", "modelo", "novo", "qualidade"
     ]
+    
+    candidatos_especificos = [remover_acentos(w.lower()) for w in palavras_reais if len(w) > 2]
+    candidatos_totais = candidatos_especificos + candidatos_genericos
 
     backend_unicas = []
-    for cand in candidatos:
-        cand_clean = remover_acentos(cand.lower().strip())
-        if cand_clean not in palavras_titulos and cand_clean not in backend_unicas:
+    for cand in candidatos_totais:
+        cand_clean = cand.strip()
+        if cand_clean and cand_clean not in palavras_titulos and cand_clean not in backend_unicas:
             backend_unicas.append(cand_clean)
 
     resultado = ""
@@ -236,22 +245,22 @@ def analisar_e_otimizar_listing(
             api_key = ""
 
     termo_entrada = produto_nosso.strip() if produto_nosso.strip() else asin_input.strip()
-    links_categoria, nome_nicho = extrair_dados_e_links_categoria(termo_entrada)
+    links_categoria, titulo_referencia, palavras_reais = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
 
-    links_md = "### 🔗 Links Oficiais da Categoria e Ofertas Concorrentes (Amazon BR):\n\n"
+    links_md = "### 🔗 Links Oficiais da Categoria e Buscas Reais (Amazon BR):\n\n"
     for i, cat in enumerate(links_categoria, start=1):
         links_md += f"{i}. [{cat['titulo']}]({cat['link']})\n"
     links_md += "\n---\n\n"
 
-    relatorio_swot = gerar_relatorio_pontos_fortes_fracos(nome_nicho)
+    relatorio_swot = gerar_relatorio_pontos_fortes_fracos(titulo_referencia, palavras_reais)
 
     prompt_mestre = (
         "Você é o Maior Especialista em SEO e Copywriter para a Amazon Brasil.\n\n"
-        "📌 DADOS DO PRODUTO:\n"
+        "📌 DADOS DO PRODUTO CONSULTADO:\n"
         "- ASIN / Entrada: " + str(asin_input) + "\n"
-        "- Produto Referência / Nicho: " + str(nome_nicho) + "\n\n"
+        "- Nome do Produto Identificado: " + str(titulo_referencia) + "\n\n"
         "🧠 ETAPA DE ANÁLISE (OBRIGATÓRIA - SILENCIOSA - NÃO EXIBIR NA SAÍDA):\n"
-        "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos.\n\n"
+        "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos baseando-se estritamente no produto identificado acima.\n\n"
         "🚨 REGRAS CRÍTICAS DE COPYWRITING E CONFORMIDADE AMAZON:\n"
         "1. TÍTULOS A e B: Máximo de 75 caracteres cada. Sem palavras proibidas ('Pronta Entrega', 'FBA', 'Envio Rápido', 'Alta Qualidade', 'Premium', 'Melhor'). Estrutura: [Nome do Produto] + [Especificação/Atributo].\n"
         "2. DESCRIÇÃO DO PRODUTO: Texto fluido entre 1.200 e 1.900 caracteres em técnica AIDA com especificações técnicas e conteúdo da embalagem.\n"
@@ -284,11 +293,11 @@ def analisar_e_otimizar_listing(
         except Exception:
             pass
 
-    titulo_a = otimizar_titulo_a10_75_chars(nome_nicho, foco_seo=False)
-    titulo_b = otimizar_titulo_a10_75_chars(nome_nicho, foco_seo=True)
-    desc_fluida, desc_html = gerar_descricao_a10_completa(nome_nicho)
-    bullet_points_md = gerar_bullet_points_a10(nome_nicho)
-    backend_clean = gerar_backend_keywords_a10(nome_nicho, titulo_a, titulo_b)
+    titulo_a = otimizar_titulo_a10_75_chars(titulo_referencia, palavras_reais, foco_seo=False)
+    titulo_b = otimizar_titulo_a10_75_chars(titulo_referencia, palavras_reais, foco_seo=True)
+    desc_fluida, desc_html = gerar_descricao_a10_dinamica(titulo_referencia)
+    bullet_points_md = gerar_bullet_points_a10_dinamico(titulo_referencia)
+    backend_clean = gerar_backend_keywords_a10_dinamico(titulo_referencia, titulo_a, titulo_b, palavras_reais)
 
     analise_dinamica = (
         "### 📊 Anúncio Gerado para Amazon Brasil\n\n"
@@ -336,8 +345,8 @@ def analisar_e_otimizar_listing(
         "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, summary banner with trust badges in Portuguese text.\n\n"
         "---\n\n"
         "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
-        "- **Cena 01 (0–5s):** Gancho visual apresentando a "
-        + nome_nicho
+        "- **Cena 01 (0–5s):** Gancho visual apresentando o "
+        + titulo_referencia
         + " em funcionamento.\n"
         "- **Cena 02 (5–15s):** Demonstração prática dos principais recursos no dia a dia.\n"
         "- **Cena 03 (15–25s):** Detalhes de acabamento e diferenciais técnicos.\n"
