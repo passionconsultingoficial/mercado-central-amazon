@@ -6,7 +6,7 @@ import streamlit as st
 from bs4 import BeautifulSoup
 from anthropic import Anthropic
 
-# Força a limpeza do cache de dados no Streamlit
+# Força a limpeza de cache de dados no Streamlit
 try:
     st.cache_data.clear()
 except Exception:
@@ -48,7 +48,7 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
     token = obter_token_sp_api()
     titulo_referencia = termo_clean.title()
 
-    # Se for um ASIN de 10 caracteres alfanuméricos, tenta buscar o título completo no catálogo
+    # Se for um ASIN de 10 caracteres alfanuméricos, busca o título na SP-API ou Web
     if len(asin_clean) == 10 and asin_clean.isalnum():
         if token:
             headers_sp = {
@@ -80,12 +80,10 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
             except Exception:
                 pass
 
-    # Preserva todas as palavras relevantes da pesquisa (ex: ["grelha", "churrasqueira", "dupla"])
     palavras_reais = [w for w in re.findall(r'\w+', titulo_referencia) if len(w) > 1 and w.upper() != asin_clean]
     if not palavras_reais:
         palavras_reais = [w for w in re.findall(r'\w+', termo_clean) if len(w) > 1]
 
-    # Monta a expressão inteira da busca encadeada com + (ex: "grelha+churrasqueira+dupla")
     query_completa = "+".join(palavras_reais) if palavras_reais else requests.utils.quote(termo_clean)
     termo_exibicao = " ".join([w.title() for w in palavras_reais]) if palavras_reais else termo_clean.title()
 
@@ -113,23 +111,37 @@ def remover_acentos(texto: str) -> str:
 
 
 def otimizar_titulo_a10_75_chars(titulo_referencia: str, palavras_reais: list, foco_seo: bool = False) -> str:
+    """
+    Maximiza o uso do limite de 75 caracteres no título da Amazon Brasil.
+    Preenche qualificadores mantendo a conformidade A10 (sem termos proibidos).
+    """
     words = [w.title() for w in palavras_reais if len(w) > 1]
-    if not words:
-        words = ["Produto", "Modelo", "Especial", "Multiuso"]
+    base_prod = " ".join(words) if words else titulo_referencia.strip().title()
 
-    base_str = " ".join(words[:6])
     if foco_seo:
-        especs = " " + " ".join(words[6:10]) if len(words) > 6 else " Inox Reforçada Prática"
-        titulo_candidato = (base_str + especs).strip()
+        qualificadores = [
+            "Inox Reforçada", "Cabo Madeira", "Aço Cabos", "Modelo Prático",
+            "Multiuso Cozinha", "Modelo Duplo", "Alta Resistência", "Uso Profissional"
+        ]
     else:
-        especs = " " + " ".join(words[6:8]) if len(words) > 6 else " Alta Resistência Cabo Madeira"
-        titulo_candidato = (base_str + especs).strip()
+        qualificadores = [
+            "Cabo Madeira Reforçado", "Aço Inox Resistente", "Modelo Duplo",
+            "Prático Resistente", "Modelo Ergonômico", "Multiuso Uso Diário"
+        ]
 
-    if len(titulo_candidato) > 75:
-        corte = titulo_candidato[:75]
-        titulo_candidato = corte.rsplit(" ", 1)[0] if " " in corte else corte
+    candidato = base_prod
+    for qual in qualificadores:
+        teste = f"{candidato} {qual}".strip()
+        if len(teste) <= 75:
+            candidato = teste
+        else:
+            break
 
-    return titulo_candidato
+    if len(candidato) > 75:
+        corte = candidato[:75]
+        candidato = corte.rsplit(" ", 1)[0] if " " in corte else corte
+
+    return candidato
 
 
 def gerar_relatorio_pontos_fortes_fracos(prod_nome: str, palavras_reais: list) -> str:
@@ -199,6 +211,10 @@ def gerar_bullet_points_a10_dinamico(prod_nome: str) -> str:
 
 
 def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b: str, palavras_reais: list) -> str:
+    """
+    Maximiza o preenchimento das Backend Keywords até o limite estrito de 230 bytes.
+    Garante que nenhuma palavra utilizada nos títulos A ou B seja repetida.
+    """
     palavras_titulos = set(
         remover_acentos(w.lower()) 
         for w in re.findall(r'\w+', titulo_a + " " + titulo_b)
@@ -206,11 +222,18 @@ def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b:
     )
 
     candidatos_especificos = [remover_acentos(w.lower()) for w in palavras_reais if len(w) > 1]
+    
+    # Banco ampliado de termos semânticos e sinônimos de e-commerce
     candidatos_genericos = [
         "churrasco", "grelhar", "carne", "inox", "moeda", "reforcada", "cabo",
         "madeira", "utilidade", "acessorio", "duravel", "resistente", "eficiente",
-        "cotidiano", "pratico", "qualidade", "modelo", "novo"
+        "cotidiano", "pratico", "qualidade", "modelo", "novo", "espeto", "parrilla",
+        "picanha", "linguica", "frango", "churrasqueira", "fogo", "carvao", "grelhado",
+        "assado", "tambor", "portatil", "varanda", "gourmet", "tampa", "trava", "fecho",
+        "dupla", "giratoria", "marmita", "utensilio", "domestico", "area", "externa",
+        "ferramenta", "cozinha", "servir", "refeicao", "preparo", "alimento", "firme"
     ]
+
     candidatos_totais = candidatos_especificos + candidatos_genericos
 
     backend_unicas = []
@@ -222,6 +245,7 @@ def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b:
     resultado = ""
     for palavra in backend_unicas:
         candidato_string = (resultado + " " + palavra).strip() if resultado else palavra
+        # Verifica rigorosamente o byte count UTF-8 para não estourar 230 bytes
         if len(candidato_string.encode("utf-8")) <= 230:
             resultado = candidato_string
         else:
@@ -258,11 +282,11 @@ def analisar_e_otimizar_listing(
         "🧠 ETAPA DE ANÁLISE (OBRIGATÓRIA - SILENCIOSA - NÃO EXIBIR NA SAÍDA):\n"
         "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos baseando-se estritamente no termo completo do produto identificado acima.\n\n"
         "🚨 REGRAS CRÍTICAS DE COPYWRITING E CONFORMIDADE AMAZON:\n"
-        "1. TÍTULOS A e B: Máximo de 75 caracteres cada. Sem palavras proibidas ('Pronta Entrega', 'FBA', 'Envio Rápido', 'Alta Qualidade', 'Premium', 'Melhor'). Estrutura: [Nome do Produto] + [Especificação/Atributo].\n"
+        "1. TÍTULOS A e B: Preencha exatamente entre 70 e 75 caracteres cada (sem ultrapassar 75). Sem palavras proibidas ('Pronta Entrega', 'FBA', 'Envio Rápido', 'Alta Qualidade', 'Premium', 'Melhor'). Estrutura: [Nome do Produto] + [Especificação/Atributo].\n"
         "2. DESCRIÇÃO DO PRODUTO: Texto fluido entre 1.200 e 1.900 caracteres em técnica AIDA com especificações técnicas e conteúdo da embalagem.\n"
         "3. VERSÃO HTML DA DESCRIÇÃO: HTML limpo usando APENAS <p>, <b> e <br>.\n"
         "4. BULLET POINTS (10 BULLETS): Formato obrigatório: Emoji + **TÍTULO EM CAIXA ALTA (2 A 4 PALAVRAS):** + explicação técnica/benefício real. Sem termos promocionais.\n"
-        "5. PALAVRAS-CHAVE BACKEND (SEARCH TERMS): Preencha exatamente até o limite máximo de 230 bytes em palavras-chave únicas separadas apenas por espaço, sem acentos, sem vírgulas, sem numerais e OBRIGATORIAMENTE SEM REPETIR NENHUMA PALAVRA QUE JÁ CONSTA NO TÍTULO A OU TÍTULO B.\n"
+        "5. PALAVRAS-CHAVE BACKEND (SEARCH TERMS): Preencha até alcançar o limite de 230 bytes em palavras-chave únicas separadas apenas por espaço, sem acentos, sem vírgulas, sem numerais e OBRIGATORIAMENTE SEM REPETIR NENHUMA PALAVRA QUE JÁ CONSTA NO TÍTULO A OU TÍTULO B.\n"
         "6. 10 PROMPTS PARA IMAGENS DA LISTAGEM: Iniciando OBRIGATORIAMENTE com 'using the attached base product image as an overlay without any modification to the product itself'. Foto 01 fundo branco puro (RGB 255,255,255).\n"
         "7. ROTEIRO DE VÍDEO (30–45s) em 5 cenas.\n"
         "8. CONTEÚDO A+ COMPLETO e 6 PROMPTS PARA BANNERS A+ em inglês.\n\n"
