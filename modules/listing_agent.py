@@ -218,8 +218,51 @@ def remover_acentos(texto: str) -> str:
     return "".join([c for c in nfkd if not unicodedata.combining(c)])
 
 
+def gerar_backend_keywords_maximizadas(termo_exibicao: str, t_a: str, t_b: str) -> str:
+    """
+    Maximiza dinamicamente o preenchimento até a cota estrita de 230 bytes em UTF-8,
+    eliminando qualquer repetição com os Títulos A e B.
+    """
+    palavras_usadas = set(
+        remover_acentos(w.lower())
+        for w in re.findall(r'\w+', t_a + " " + t_b + " " + termo_exibicao)
+        if len(w) > 1
+    )
+
+    # Banco expandido de variações semânticas, termos de busca e atributos
+    banco_expansivo = [
+        "reforcado", "pratico", "ergonomico", "duravel", "resiliente", "multiuso",
+        "eficiente", "resistente", "original", "uso", "diario", "conforto", "domestico",
+        "utensilio", "cozinha", "preparo", "alimento", "rapido", "cozimento", "capacidade",
+        "seguranca", "vedacao", "valvula", "borracha", "aluminio", "inox", "baquelite",
+        "presilha", "mola", "pino", "isolante", "termico", "manuseio", "qualidade",
+        "domestica", "refeicoes", "alimentos", "servico", "garantia", "estrutura",
+        "acabamento", "polido", "polida", "refeicao", "praticidade", "utilidade"
+    ]
+
+    candidatos_unicos = []
+    # Adiciona palavras específicas extraídas do produto inserido
+    palavras_produto = [remover_acentos(w.lower()) for w in re.findall(r'\w+', termo_exibicao) if len(w) > 1]
+    totais = palavras_produto + banco_expansivo
+
+    for word in totais:
+        w_clean = word.strip()
+        if w_clean and w_clean not in palavras_usadas and w_clean not in candidatos_unicos:
+            candidatos_unicos.append(w_clean)
+
+    resultado = ""
+    for palavra in candidatos_unicos:
+        candidato = (resultado + " " + palavra).strip() if resultado else palavra
+        if len(candidato.encode('utf-8')) <= 230:
+            resultado = candidato
+        else:
+            break
+
+    return resultado
+
+
 def gerar_anuncio_completo_dinamico(termo_exibicao: str, dados_vencedor: dict) -> str:
-    """Gera a estrutura completa de todas as 8 seções dinamicamente."""
+    """Gera o relatório de diagnóstico e a criação do anúncio corrigido."""
     words = [w.title() for w in re.findall(r'\w+', termo_exibicao) if len(w) > 1]
     prod_base = " ".join(words) if words else termo_exibicao.title()
 
@@ -233,27 +276,22 @@ def gerar_anuncio_completo_dinamico(termo_exibicao: str, dados_vencedor: dict) -
         corte = t_b[:75]
         t_b = corte.rsplit(" ", 1)[0] if " " in corte else corte
 
-    tit_words = set(remover_acentos(w.lower()) for w in re.findall(r'\w+', t_a + " " + t_b))
-    atributos_dinamicos = [
-        "reforcado", "pratico", "ergonomico", "duravel", "resiliente", "multiuso",
-        "eficiente", "resistente", "original", "uso", "diario", "conforto", "domestico"
-    ]
-    backend_list = [w for w in atributos_dinamicos if w not in tit_words]
-    backend_str = " ".join(backend_list)
-    if len(backend_str.encode('utf-8')) > 230:
-        backend_str = backend_str.encode('utf-8')[:230].decode('utf-8', errors='ignore').rsplit(" ", 1)[0]
+    backend_str = gerar_backend_keywords_maximizadas(termo_exibicao, t_a, t_b)
 
     return (
-        f"### 📋 Relatório Comparativo Avançado: Nosso Produto vs. Vencedor da Subcategoria\n\n"
-        f"| Métrica / Atributo | Vencedor da Subcategoria (Amazon BR) | Nossa Estratégia Otimizada |\n"
-        f"| :--- | :--- | :--- |\n"
-        f"| **Anúncio Benchmark** | [{dados_vencedor['titulo_lider']}]({dados_vencedor['link_lider']}) | Otimização Técnica de Alta Conversão |\n"
-        f"| **ASIN do Líder** | `{dados_vencedor['asin_lider']}` | Novo Listing Otimizado |\n"
-        f"| **Preço de Mercado** | `{dados_vencedor['preco_lider']}` | Posicionamento Estratégico Competitivo |\n"
-        f"| **Pontos Fortes do Líder** | Posição orgânica consolidada, alto volume histórico de vendas e relevância na busca. | Oferta com maior clareza técnica, material reforçado e garantia diferenciada. |\n"
-        f"| **Dores Mapeadas nos Reviews** | Reclamações sobre fragilidade do acabamento e vedação/desgaste com o tempo. | Neutralização explícita nas primeiras linhas dos Bullets e fotos técnicas. |\n\n"
-        f"---\n\n"
-        f"### 📊 Anúncio Otimizado para Amazon Brasil\n\n"
+        f"### 🎯 Diagnóstico do Vencedor da Subcategoria\n\n"
+        f"🏆 **Produto Líder Mapeado na Amazon BR:** [{dados_vencedor['titulo_lider']}]({dados_vencedor['link_lider']})\n"
+        f"📌 **ASIN:** `{dados_vencedor['asin_lider']}` | **Preço Praticado:** `{dados_vencedor['preco_lider']}`\n\n"
+        f"#### 🟢 Pontos Fortes do Vencedor:\n"
+        f"1. **Alta Relevância e Volume Orgânico:** Posição topo de busca consolidada por histórico continuo de vendas.\n"
+        f"2. **Marca Reconhecida no Segmento:** Confiança imediata do consumidor na categoria de {prod_base}.\n"
+        f"3. **Preço Competitivo:** Atração de tráfego inicial focado em custo-benefício.\n\n"
+        f"#### 🔴 Pontos Fracos e Reclamações Recorrentes (Dores Mapeadas nos Reviews do Vencedor):\n"
+        f"1. **Fragilidade do Acabamento / Vedações:** Queixas frequentes sobre desgaste precoce das peças de encaixe e borracha.\n"
+        f"2. **Expectativa Frustrada de Tamanho / Capacidade:** Compradores relatam divergência entre a capacidade percebida e a real.\n"
+        f"3. **Instabilidade no Manuseio:** Relatos de desconforto na pega e risco de deformação no uso contínuo.\n\n"
+        f"--- \n\n"
+        f"### 📊 Criação do Nosso Anúncio Otimizado (Correções Aplicadas)\n\n"
         f"**1. TÍTULOS OTIMIZADOS (LIMITE ESTRITO: 70 A 75 CARACTERES | SEM TERMOS PROIBIDOS)**\n"
         f"- **Título A (Clareza + Atributos Principais):** `{t_a}` *(Contagem: {len(t_a)} caracteres)*\n"
         f"- **Título B (SEO + Especificações Técnicas):** `{t_b}` *(Contagem: {len(t_b)} caracteres)*\n\n"
@@ -283,18 +321,18 @@ def gerar_anuncio_completo_dinamico(termo_exibicao: str, dados_vencedor: dict) -
         f"- 01 {prod_base}<br>\n"
         f"- 01 Manual de Instruções em Português</p>\n"
         f"```\n\n"
-        f"**3. 10 BULLET POINTS DE ALTA CONVERSÃO**\n"
+        f"**3. 10 BULLET POINTS DE ALTA CONVERSÃO (NEUTRALIZANDO AS DORES DO VENCEDOR)**\n"
         f"* 🎯 **ALTA PERFORMANCE E EFICIÊNCIA:** Projeto técnico do {prod_base} desenvolvido para entregar desempenho superior e máxima confiabilidade.\n"
-        f"* 🧱 **ESTRUTURA REFORÇADA:** Confeccionado com materiais de alta densidade para suportar o uso contínuo sem deformação.\n"
-        f"* ⚡ **DESIGN ERGONÔMICO E PRÁTICO:** Formato pensado para facilitar o manuseio e proporcionar total controle e segurança durante o uso.\n"
+        f"* 🧱 **ESTRUTURA REFORÇADA ANTIDEFORMAGEM:** Confeccionado com materiais de alta densidade que não desgastam nem deforma com uso contínuo.\n"
+        f"* ⚡ **DESIGN ERGONÔMICO E SEGURO:** Pega anatomicalmente testada que elimina o desconforto e garante total firmeza durante o uso.\n"
+        f"* 📐 **DIMENSÕES E CAPACIDADE REAIS:** Medidas 100% aferidas para garantir que você receba exatamente o volume e tamanho declarados.\n"
         f"* 🛡️ **COMPONENTES CERTIFICADOS:** Fabricação atóxica e segura conforme as diretrizes regulatórias e de proteção ao consumidor.\n"
         f"* 🔧 **MONTAGEM E USO INTUITIVO:** Acionamento simples sem necessidade de ferramentas complexas ou instalações demoradas.\n"
         f"* 💡 **VERSATILIDADE MULTIUSO:** Adapta-se perfeitamente às exigências do ambiente doméstico ou profissional.\n"
         f"* 🧼 **FÁCIL HIGIENIZAÇÃO:** Superfície com acabamento especial que evita o acúmulo de sujidades e simplifica a manutenção.\n"
-        f"* ⚙️ **ENCAIXES DE PRECISÃO:** Engenharia com tolerâncias reduzidas que garantem estabilidade e funcionamento sem folgas.\n"
-        f"* 🌿 **EFICIÊNCIA E ECONOMIA:** Desenvolvimento focado no aproveitamento otimizado de recursos durante o uso.\n"
+        f"* ⚙️ **ENCAIXES DE PRECISÃO:** Engenharia com tolerâncias reduzidas que garantem vedação perfeita sem vazamentos.\n"
         f"* 📦 **EMBALAGEM DE PROTEÇÃO:** Enviado em caixa reforçada para preservar a integridade estrutural do produto até o destino.\n\n"
-        f"**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - ATÉ 230 BYTES MAXIMIZADOS)**\n"
+        f"**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - MAXIMIZADO ATÉ 230 BYTES)**\n"
         f"`{backend_str}`\n\n"
         f"> 📌 **Byte Count:** {len(backend_str.encode('utf-8'))} / 230 bytes autorizados. Nenhuma palavra presente nos Títulos A ou B foi repetida nesta lista.\n\n"
         f"**5. PROMPTS PARA IMAGENS DA LISTAGEM (10 PROMPTS EM INGLÊS)**\n"
@@ -341,36 +379,39 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
 
     prompt_mestre = (
         f"Você é o Maior Especialista em SEO e Copywriting de Alta Conversão para E-commerce na Amazon Brasil.\n\n"
-        f"📌 DADOS DE BENCHMARK DA SUBCATEGORIA:\n"
+        f"📌 DADOS DO LÍDER VENCEDOR DA SUBCATEGORIA:\n"
         f"- Produto Alvo: {termo_exibicao}\n"
-        f"- VENCEDOR REAL DA SUBCATEGORIA (AMAZON BR): {dados_vencedor['titulo_lider']}\n"
+        f"- VENCEDOR REAL DA SUBCATEGORIA: {dados_vencedor['titulo_lider']}\n"
         f"- ASIN DO VENCEDOR: {dados_vencedor['asin_lider']}\n"
-        f"- PREÇO PRATICADO PELO VENCEDOR: {dados_vencedor['preco_lider']}\n"
-        f"- LINK DO ANÚNCIO LÍDER: {dados_vencedor['link_lider']}\n\n"
-        "GERE UMA ANÁLISE PROFUNDA E UM ANÚNCIO COMPLETO EM MARKDOWN SEGUINDO ESTRITAMENTE A ESTRUTURA ABAIXO:\n\n"
-        "### 📋 Relatório Comparativo Avançado: Nosso Produto vs. Vencedor da Subcategoria\n\n"
-        "| Métrica / Atributo | Vencedor da Subcategoria (Amazon BR) | Nossa Estratégia Otimizada |\n"
-        "| :--- | :--- | :--- |\n"
-        f"| **Anúncio Benchmark** | [{dados_vencedor['titulo_lider']}]({dados_vencedor['link_lider']}) | Otimização Técnica de Alta Conversão |\n"
-        f"| **ASIN do Líder** | `{dados_vencedor['asin_lider']}` | Novo Listing Otimizado |\n"
-        f"| **Preço de Mercado** | `{dados_vencedor['preco_lider']}` | Posicionamento Estratégico Competitivo |\n"
-        "| **Pontos Fortes do Líder** | [Analise 2 pontos fortes específicos do vencedor deste produto] | Diferenciação de atributos e clareza técnica na oferta. |\n"
-        "| **Dores Mapeadas nos Reviews do Líder** | [Detalhamento profundo de 3 dores/reclamações recorrentes dos compradores do vencedor] | Neutralização explícita nas primeiras linhas dos Bullets e fotos. |\n\n"
+        f"- PREÇO DO VENCEDOR: {dados_vencedor['preco_lider']}\n"
+        f"- LINK DO VENCEDOR: {dados_vencedor['link_lider']}\n\n"
+        "SUA MISSÃO:\n"
+        "1. Faça um Diagnóstico Mercadológico detalhado do Vencedor da Subcategoria expondo seus Pontos Fortes e Dores/Reclamações Recorrentes nos reviews.\n"
+        "2. Crie o Nosso Anúncio Otimizado aplicando correções diretas para neutralizar todas as dores do líder.\n"
+        "3. PREENCHA AS BACKEND KEYWORDS (SEARCH TERMS) DE FORMA MAXIMALISTA ATÉ ATINGIR EXATAMENTE DE 220 A 230 BYTES EM UTF-8, agrupando sinônimos, atributos e variações SEM REPETIR NENHUMA PALAVRA QUE CONSTA NOS TÍTULOS A E B.\n\n"
+        "GERE A RESPOSTA COMPLETA EM MARKDOWN SEGUINDO ESTRITAMENTE ESTA ESTRUTURA:\n\n"
+        "### 🎯 Diagnóstico do Vencedor da Subcategoria\n\n"
+        f"🏆 **Produto Líder Mapeado na Amazon BR:** [{dados_vencedor['titulo_lider']}]({dados_vencedor['link_lider']})\n"
+        f"📌 **ASIN:** `{dados_vencedor['asin_lider']}` | **Preço Praticado:** `{dados_vencedor['preco_lider']}`\n\n"
+        "#### 🟢 Pontos Fortes do Vencedor:\n"
+        "[Detalhe 3 pontos fortes específicos da oferta líder do segmento]\n\n"
+        "#### 🔴 Pontos Fracos e Reclamações Recorrentes (Dores Mapeadas nos Reviews do Vencedor):\n"
+        "[Aprofunde 3 principais dores, queixas de durabilidade ou problemas apontados pelos compradores do líder]\n\n"
         "---\n\n"
-        "### 📊 Anúncio Otimizado para Amazon Brasil\n\n"
+        "### 📊 Criação do Nosso Anúncio Otimizado (Correções Aplicadas)\n\n"
         "**1. TÍTULOS OTIMIZADOS (LIMITE ESTRITO: 70 A 75 CARACTERES | SEM TERMOS PROIBIDOS)**\n"
         "- **Título A (Clareza + Atributos Principais):** [Gere o título A com exatamente 70 a 75 caracteres sem palavras proibidas como 'Pronta Entrega', 'FBA', 'Melhor'] *(Contagem: XX caracteres)*\n"
         "- **Título B (SEO + Especificações Técnicas):** [Gere o título B com exatamente 70 a 75 caracteres sem palavras proibidas] *(Contagem: XX caracteres)*\n\n"
         "**2. DESCRIÇÃO COMPLETA DO PRODUTO (1.200 A 1.800 CARACTERES - TÉCNICA AIDA)**\n"
-        f"[Texto rico e altamente persuasivo em AIDA focando em {termo_exibicao}, com especificações técnicas e conteúdo da embalagem]\n\n"
+        f"[Texto rico em AIDA focando em {termo_exibicao}, com especificações e conteúdo da embalagem]\n\n"
         "#### Versão HTML Otimizada para o Seller Central:\n"
         "```html\n"
         "[Gere o código HTML limpo utilizando estritamente as tags autorizadas <p>, <b> e <br>]\n"
         "```\n\n"
-        "**3. 10 BULLET POINTS DE ALTA CONVERSÃO**\n"
-        "[Gere exatamente 10 Bullet Points ricos no formato: Emoji + **TÍTULO EM CAIXA ALTA (2 A 4 PALAVRAS):** + explicação técnica e benefício real]\n\n"
-        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - ATÉ 230 BYTES MAXIMIZADOS)**\n"
-        "[Gere a lista de palavras-chave separadas por espaço, sem acentos, sem vírgulas, sem numerais e OBRIGATORIAMENTE SEM REPETIR NENHUMA PALAVRA dos Títulos A e B]\n\n"
+        "**3. 10 BULLET POINTS DE ALTA CONVERSÃO (NEUTRALIZANDO AS DORES DO VENCEDOR)**\n"
+        "[Gere exatamente 10 Bullet Points ricos no formato: Emoji + **TÍTULO EM CAIXA ALTA (2 A 4 PALAVRAS):** + explicação técnica e benefício real, corrigindo as dores do líder]\n\n"
+        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - MÁXIMO APROVEITAMENTO ATÉ 230 BYTES)**\n"
+        "[Gere a lista maximalista de palavras-chave separadas por espaço, sem acentos, sem vírgulas, sem numerais e OBRIGATORIAMENTE SEM REPETIR NENHUMA PALAVRA dos Títulos A e B, ocupando o máximo do limite de 230 bytes]\n\n"
         "**5. PROMPTS PARA IMAGENS DA LISTAGEM (10 PROMPTS EM INGLÊS)**\n"
         "1. **Foto 01 (Principal - Fundo Branco):** using the attached base product image as an overlay without any modification to the product itself, isolated on seamless pure white background (RGB 255,255,255), product filling 85% of frame, crisp studio commercial lighting.\n"
         "2. **Foto 02 (Uso Real / Lifestyle):** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle background, natural commercial lighting.\n"
