@@ -73,7 +73,7 @@ with tab1:
         if not termo_final:
             st.warning("Por favor, informe a palavra-chave/ASIN ou envie uma imagem válida.")
         else:
-            with st.spinner("Mapeando ofertas na Amazon BR, gerando SWOT e copy A10..."):
+            with st.spinner("Mapeando concorrentes na Amazon BR, identificando Líder de Vendas e gerando copy A10..."):
                 resultado = analisar_e_otimizar_listing(termo_final)
                 st.markdown(resultado)
 
