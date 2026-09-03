@@ -34,8 +34,9 @@ def obter_token_sp_api() -> str:
 
 
 def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
-    """Análise multimodal via Claude Vision para extração exata do produto."""
+    """Análise multimodal robusta via Claude Vision para extração exata do produto."""
     if not api_key or len(api_key.strip()) < 10:
+        st.error("Chave ANTHROPIC_API_KEY não configurada nos Secrets.")
         return ""
 
     try:
@@ -43,13 +44,16 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
         client = Anthropic(api_key=api_key.strip())
         media_type = mime_type if mime_type in ["image/jpeg", "image/png", "image/gif", "image/webp"] else "image/jpeg"
 
-        modelos = [
+        # Tenta modelos compatíveis com Vision em ordem de estabilidade
+        modelos_vision = [
+            "claude-3-5-sonnet-20240620",
             "claude-3-5-sonnet-latest",
-            "claude-3-5-haiku-latest",
-            "claude-3-haiku-20240307"
+            "claude-3-haiku-20240307",
+            "claude-3-sonnet-20240229"
         ]
 
-        for model_id in modelos:
+        erros_vision = []
+        for model_id in modelos_vision:
             try:
                 response = client.messages.create(
                     model=model_id,
@@ -69,8 +73,10 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
                                 {
                                     "type": "text",
                                     "text": (
-                                        "Identifique este produto comercial. "
-                                        "Retorne APENAS a expressão de busca direta em português do Brasil (2 a 5 palavras). "
+                                        "Examine esta imagem de produto comercial. "
+                                        "Qual é o produto exato exibido? "
+                                        "Retorne APENAS o nome do produto comercial em português do Brasil (2 a 5 palavras). "
+                                        "Exemplo se for comedouro pet: 'Comedouro Pet Elevado Inox Duo'. "
                                         "Sem explicações, saudações ou pontuação."
                                     )
                                 }
@@ -81,12 +87,15 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
                 termo = response.content[0].text.strip().replace("\n", " ")
                 if termo:
                     return termo
-            except Exception:
+            except Exception as e_mod:
+                erros_vision.append(f"{model_id}: {str(e_mod)}")
                 continue
 
+        if erros_vision:
+            st.error(f"Detalhes das tentativas de imagem: {erros_vision[0]}")
         return ""
     except Exception as e:
-        st.error(f"Erro na análise visual: {e}")
+        st.error(f"Erro ao processar imagem: {e}")
         return ""
 
 
@@ -229,7 +238,6 @@ def gerar_backend_keywords_maximizadas(termo_exibicao: str, t_a: str, t_b: str) 
         if len(w) > 1
     )
 
-    # Banco expandido de variações semânticas, termos de busca e atributos
     banco_expansivo = [
         "reforcado", "pratico", "ergonomico", "duravel", "resiliente", "multiuso",
         "eficiente", "resistente", "original", "uso", "diario", "conforto", "domestico",
@@ -241,7 +249,6 @@ def gerar_backend_keywords_maximizadas(termo_exibicao: str, t_a: str, t_b: str) 
     ]
 
     candidatos_unicos = []
-    # Adiciona palavras específicas extraídas do produto inserido
     palavras_produto = [remover_acentos(w.lower()) for w in re.findall(r'\w+', termo_exibicao) if len(w) > 1]
     totais = palavras_produto + banco_expansivo
 
@@ -435,8 +442,8 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
         try:
             client = Anthropic(api_key=str(api_key).strip())
             modelos_validos = [
+                "claude-3-5-sonnet-20240620",
                 "claude-3-5-sonnet-latest",
-                "claude-3-5-haiku-latest",
                 "claude-3-haiku-20240307",
             ]
             for model_name in modelos_validos:
