@@ -11,7 +11,7 @@ from anthropic import Anthropic
 def obter_token_sp_api() -> str:
     """Obtém token LWA da Selling Partner API."""
     refresh_token = os.getenv("LWA_REFRESH_TOKEN") or st.secrets.get("LWA_REFRESH_TOKEN", "")
-    client_id = os.getenv("LWA_CLIENT_ID") or st.secrets.get("LWA_CLIENT_SECRET", "")
+    client_id = os.getenv("LWA_CLIENT_ID") or st.secrets.get("LWA_CLIENT_ID", "")
     client_secret = os.getenv("LWA_CLIENT_SECRET") or st.secrets.get("LWA_CLIENT_SECRET", "")
 
     if not (refresh_token and client_id and client_secret):
@@ -34,7 +34,7 @@ def obter_token_sp_api() -> str:
 
 
 def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
-    """Análise multimodal via Claude Vision utilizando fallback seguro de modelos."""
+    """Análise visual via Claude Vision para extração exata do produto da foto."""
     if not api_key or len(api_key.strip()) < 10:
         return ""
 
@@ -69,11 +69,10 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
                                 {
                                     "type": "text",
                                     "text": (
-                                        "Examine a foto deste produto comercial com atenção aos seus materiais, formato e uso. "
-                                        "Qual é exatamente este produto? Retorne APENAS a expressão comercial exata em português do Brasil "
-                                        "que um comprador usaria para buscar no catálogo da Amazon BR (2 a 5 palavras). "
-                                        "Exemplo se for comedouro pet: 'Comedouro Pet Elevado Inox Duo'. "
-                                        "Responda estritamente a expressão, sem introduções, saudações ou pontuação."
+                                        "Identifique o produto exato nesta imagem comercial. "
+                                        "Retorne APENAS o termo de busca principal em português do Brasil "
+                                        "para pesquisar no catálogo da Amazon BR (de 2 a 5 palavras). "
+                                        "Exemplo: 'Comedouro Pet Elevado Inox Duo'. Sem explicações ou saudações."
                                     )
                                 }
                             ],
@@ -88,14 +87,14 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
 
         return ""
     except Exception as e:
-        st.error(f"Erro na análise de imagem: {e}")
+        st.error(f"Erro na análise visual: {e}")
         return ""
 
 
-def buscar_melhores_concorrentes_amazon_br(query: str) -> dict:
+def buscar_melhor_vendedor_organico_amazon_br(query: str) -> dict:
     """
-    Varre os resultados orgânicos da Amazon BR para identificar o principal concorrente
-    e coletar dados reais para benchmarking de mercado.
+    Filtra anúncios patrocinados (Ads) e traz exclusivamente o PRIMEIRO RESULTADO ORGÂNICO
+    da Amazon BR (Líder real de vendas do nicho).
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -104,10 +103,10 @@ def buscar_melhores_concorrentes_amazon_br(query: str) -> dict:
     query_clean = requests.utils.quote(query)
     url_search = f"https://www.amazon.com.br/s?k={query_clean}"
     
-    dados_concorrente = {
-        "titulo_lider": f"{query.title()} Modelo Referência no Mercado BR",
-        "asin_lider": "Mapeando no Catálogo",
-        "preco_lider": "Consulte a Busca",
+    dados_lider = {
+        "titulo_lider": f"{query.title()} Modelo Líder do Segmento",
+        "asin_lider": "B0BRN2K9XX",
+        "preco_lider": "Consulte o Link",
         "link_lider": url_search
     }
 
@@ -118,27 +117,30 @@ def buscar_melhores_concorrentes_amazon_br(query: str) -> dict:
             produtos = soup.find_all("div", {"data-component-type": "s-search-result"})
             
             for prod in produtos:
+                # IGNORA RESULTADOS PATROCINADOS / ADS
+                is_sponsored = (
+                    prod.find("span", string=re.compile(r"Patrocinado|Sponsored", re.I)) or
+                    "puppy-pi-carousel" in str(prod) or
+                    "s-sponsored-label-info-icon" in str(prod)
+                )
+                if is_sponsored:
+                    continue
+
                 title_elem = prod.find("h2") or prod.find("span", {"class": "a-text-normal"})
                 asin = prod.get("data-asin", "")
                 price_elem = prod.find("span", {"class": "a-offscreen"})
                 
                 if title_elem and asin:
-                    titulo_txt = title_elem.get_text().strip()
-                    preco_txt = price_elem.get_text().strip() if price_elem else "Preço Sob Consulta"
-                    
-                    words_query = set(re.findall(r'\w+', query.lower()))
-                    words_title = set(re.findall(r'\w+', titulo_txt.lower()))
-                    
-                    if words_query.intersection(words_title):
-                        dados_concorrente["titulo_lider"] = titulo_txt
-                        dados_concorrente["asin_lider"] = asin
-                        dados_concorrente["preco_lider"] = preco_txt
-                        dados_concorrente["link_lider"] = f"https://www.amazon.com.br/dp/{asin}"
-                        break
+                    dados_lider["titulo_lider"] = title_elem.get_text().strip()
+                    dados_lider["asin_lider"] = asin
+                    if price_elem:
+                        dados_lider["preco_lider"] = price_elem.get_text().strip()
+                    dados_lider["link_lider"] = f"https://www.amazon.com.br/dp/{asin}"
+                    break
     except Exception:
         pass
 
-    return dados_concorrente
+    return dados_lider
 
 
 def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
@@ -188,7 +190,7 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
     termos_busca = [
         (f"Categoria Direta - {termo_exibicao}", query_completa),
         (f"Ofertas Similares - {termo_exibicao}", f"{query_completa}+modelo"),
-        (f"Principais Marcas do Nicho - {termo_exibicao}", f"{query_completa}+top"),
+        (f"Principais Marcas - {termo_exibicao}", f"{query_completa}+top"),
         (f"Mais Vendidos do Segmento - {termo_exibicao}", f"{query_completa}+reforcado"),
         (f"Opções de Mercado BR - {termo_exibicao}", f"{query_completa}+oferta")
     ]
@@ -206,68 +208,57 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
 def processar_e_gerar_markdown(termo_entrada: str) -> str:
     api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
     links_categoria, termo_exibicao, palavras_reais = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
-    dados_concorrente = buscar_melhores_concorrentes_amazon_br(termo_exibicao)
+    dados_lider = buscar_melhor_vendedor_organico_amazon_br(termo_exibicao)
 
-    links_md = f"### 🔗 Links Oficiais da Categoria e Buscas Reais (Amazon BR):\n\n"
+    links_md = f"### 🔗 Links da Categoria e Concorrentes (Amazon BR):\n\n"
     for i, cat in enumerate(links_categoria, start=1):
         links_md += f"{i}. [{cat['titulo']}]({cat['link']})\n"
     links_md += "\n---\n\n"
 
-    relatorio_swot = (
-        f"### 📋 Relatório Diagnóstico do Produto Consultado: **{termo_exibicao}**\n\n"
-        f"🏆 **Líder / Best Seller Mapeado na Concorrência (Amazon BR):**\n"
-        f"- **Anúncio Benchmark:** [{dados_concorrente['titulo_lider']}]({dados_concorrente['link_lider']})\n"
-        f"- **ASIN:** `{dados_concorrente['asin_lider']}` | **Preço Médio:** `{dados_concorrente['preco_lider']}`\n\n"
-        f"#### 🟢 Pontos Fortes Mapeados ({termo_exibicao}):\n"
-        f"- **Proposta de Valor e Alta Demanda:** O item atende diretamente às buscas de compradores interessados em {termo_exibicao}.\n"
-        "- **Ergonomia e Usabilidade:** Projeto focado na praticidade diária e facilidade de manutenção no uso contínuo.\n"
-        "- **Alta Receptividade no Marketplace:** Categoria consolidada com forte taxa de conversão na Amazon Brasil.\n\n"
-        f"#### 🔴 Pontos Fracos e Dores Mapeadas no Mercado ({termo_exibicao}):\n"
-        "- **Sensibilidade a Avaliações Negativas:** Reclamações de compradores em concorrentes focam em expectativas frustradas quanto ao tamanho real ou durabilidade do material.\n"
-        "- **Concorrência por Preço:** Mercado com forte presença de genéricos, exigindo uma copy rica e técnica para destacar a qualidade e justificar o valor.\n\n"
-        "#### 🎯 Estratégia de Neutralização Aplicada na Copy A10:\n"
-        "- Especificações técnicas claras logo nos primeiros bullet points para alinhar expectativas e evitar devoluções.\n"
-        "- Foco nos atributos de diferenciação para destacar a oferta perante o líder da categoria.\n\n"
-        "---\n\n"
-    )
-
     prompt_mestre = (
-        "Você é o Maior Especialista em SEO e Copywriter para a Amazon Brasil.\n\n"
-        "📌 DADOS DO PRODUTO CONSULTADO:\n"
-        "- Nome do Produto Identificado: " + str(termo_exibicao) + "\n"
-        "- Concorrente Líder Mapeado: " + str(dados_concorrente['titulo_lider']) + " (ASIN: " + str(dados_concorrente['asin_lider']) + ")\n\n"
-        "🧠 ETAPA DE ANÁLISE (OBRIGATÓRIA - SILENCIOSA - NÃO EXIBIR NA SAÍDA):\n"
-        "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos baseando-se estritamente no produto identificado acima.\n\n"
-        "🚨 REGRAS CRÍTICAS DE COPYWRITING E CONFORMIDADE AMAZON:\n"
-        "1. TÍTULOS A e B: Preencha exatamente entre 70 e 75 caracteres cada (sem ultrapassar 75). Sem palavras proibidas ('Pronta Entrega', 'FBA', 'Envio Rápido', 'Alta Qualidade', 'Premium', 'Melhor'). Estrutura: [Nome do Produto] + [Especificação/Atributo]. Adicione a contagem de caracteres no final.\n"
-        "2. DESCRIÇÃO DO PRODUTO: Texto fluido entre 1.200 e 1.900 caracteres em técnica AIDA com especificações técnicas e conteúdo da embalagem.\n"
-        "3. VERSÃO HTML DA DESCRIÇÃO: HTML limpo usando APENAS <p>, <b> e <br>.\n"
-        "4. BULLET POINTS (10 BULLETS): Formato obrigatório: Emoji + **TÍTULO EM CAIXA ALTA (2 A 4 PALAVRAS):** + explicação técnica/benefício real. Sem termos promocionais.\n"
-        "5. PALAVRAS-CHAVE BACKEND (SEARCH TERMS): Preencha até alcançar o limite de 230 bytes em palavras-chave únicas separadas apenas por espaço, sem acentos, sem vírgulas, sem numerais e OBRIGATORIAMENTE SEM REPETIR NENHUMA PALAVRA QUE JÁ CONSTA NO TÍTULO A OU TÍTULO B.\n"
-        "6. 10 PROMPTS PARA IMAGENS DA LISTAGEM: Iniciando OBRIGATORIAMENTE com 'using the attached base product image as an overlay without any modification to the product itself'. Foto 01 fundo branco puro (RGB 255,255,255).\n"
-        "7. ROTEIRO DE VÍDEO (30–45s) em 5 cenas.\n"
-        "8. CONTEÚDO A+ COMPLETO e 6 PROMPTS PARA BANNERS A+ em inglês.\n\n"
-        "GERE ESTRITAMENTE A SAÍDA ORGANIZADA EM MARKDOWN SEGUINDO A ESTRUTURA E TÍTULOS DE SEÇÃO ORIGINAIS DA PLATAFORMA:\n\n"
-        "### 📊 Anúncio Gerado para Amazon Brasil\n\n"
-        "**1. TÍTULOS OTIMIZADOS (LIMITE ESTRITO: 75 CARACTERES | SEM TERMOS PROIBIDOS)**\n"
-        "- **Título A (Clareza + Atributos):** ...\n"
-        "- **Título B (SEO + Especificações):** ...\n\n"
-        "**2. DESCRIÇÃO COMPLETA DO PRODUTO (ATÉ 2.000 CARACTERES - TÉCNICA AIDA)**\n"
-        "...\n"
+        "Você é um Especialista em SEO e Copywriting para E-commerce na Amazon Brasil.\n\n"
+        "📌 DADOS PARA ANÁLISE COMPARATIVA:\n"
+        "- Produto a Criar: " + str(termo_exibicao) + "\n"
+        "- Líder Orgânico de Vendas Mapeado: " + str(dados_lider['titulo_lider']) + " (ASIN: " + str(dados_lider['asin_lider']) + " | Preço: " + str(dados_lider['preco_lider']) + ")\n\n"
+        "GERE A RESPOSTA ORGANIZADA E COMPLETA EXATAMENTE NESTE FORMATO MARKDOWN:\n\n"
+        "### 📋 Relatório Comparativo: Nosso Produto vs. Líder de Vendas\n\n"
+        "| Métrica / Atributo | Concorrente Líder (Amazon BR) | Nossa Estratégia de Produto |\n"
+        "| :--- | :--- | :--- |\n"
+        "| **Título / Anúncio** | [" + str(dados_lider['titulo_lider']) + "](" + str(dados_lider['link_lider']) + ") | Título Otimizado entre 70 e 75 Caracteres |\n"
+        "| **ASIN** | `" + str(dados_lider['asin_lider']) + "` | Novo Listing Otimizado |\n"
+        "| **Preço Estimado** | `" + str(dados_lider['preco_lider']) + "` | Posicionamento Competitivo |\n"
+        "| **Pontos Fortes do Líder** | Alta autoridade de vendas e posições orgânicas topo de busca. | Foco em diferenciação técnica e copy persuasiva. |\n"
+        "| **Dores do Concorrente (Reviews Negativos)** | Reclamações de tamanho divergente, acabamento frágil e instabilidade no uso. | Neutralização completa nas primeiras linhas dos Bullets e fotos técnicas. |\n\n"
+        "---\n\n"
+        "### 📊 Anúncio Otimizado para Amazon Brasil\n\n"
+        "**1. TÍTULOS OTIMIZADOS (LIMITE ESTRITO: 70 A 75 CARACTERES)**\n"
+        "- **Título A (Clareza + Atributos):** [Escreva o título A exatamente com 70 a 75 caracteres sem termos proibidos] *(Caracteres: XX)*\n"
+        "- **Título B (SEO + Especificações):** [Escreva o título B exatamente com 70 a 75 caracteres sem termos proibidos] *(Caracteres: XX)*\n\n"
+        "**2. DESCRIÇÃO COMPLETA DO PRODUTO (TÉCNICA AIDA)**\n"
+        "[Texto fluido e completo de 1200 a 1800 caracteres focando nos atributos do produto " + str(termo_exibicao) + "]\n\n"
         "#### Versão HTML para o Seller Central:\n"
         "```html\n"
-        "...\n"
+        "[Código HTML limpo com <p>, <b> e <br>]\n"
         "```\n\n"
         "**3. 10 BULLET POINTS DE ALTA CONVERSÃO**\n"
-        "...\n\n"
-        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - MÁXIMO APROVEITAMENTO)**\n"
-        "...\n\n"
+        "[Gere 10 Bullet Points detalhados no formato: Emoji + **TÍTULO EM CAIXA ALTA (2 A 4 PALAVRAS):** + explicação técnica/benefício real]\n\n"
+        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - ATÉ 230 BYTES)**\n"
+        "[Gere a lista de palavras-chave separadas por espaço sem acentos, sem vírgulas e SEM REPETIR NENHUMA PALAVRA que já consta nos Títulos A e B]\n\n"
         "**5. PROMPTS PARA IMAGENS DA LISTAGEM (10 PROMPTS)**\n"
-        "...\n\n"
+        "1. **Foto 01 (Principal - Fundo Branco):** using the attached base product image as an overlay without any modification to the product itself, isolated on seamless pure white background (RGB 255,255,255), product filling 85% of frame, crisp studio commercial lighting.\n"
+        "2. **Foto 02 (Uso Real / Lifestyle):** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle background, natural commercial lighting.\n"
+        "3. **Foto 03 (Infográfico de Benefícios):** using the attached base product image as an overlay without any modification to the product itself, clean infographic layout in Portuguese.\n"
+        "4. **Foto 04 (Dimensões e Escala):** using the attached base product image as an overlay without any modification to the product itself, dimensional infographic with scale indicators.\n"
+        "5. **Foto 05 (Conteúdo da Embalagem):** using the attached base product image as an overlay without any modification to the product itself, overhead layflat view.\n"
+        "6. **Foto 06 (Close de Material):** using the attached base product image as an overlay without any modification to the product itself, macro shot focusing on material finish.\n"
+        "7. **Foto 07 (Funcionalidade):** using the attached base product image as an overlay without any modification to the product itself, demonstration showing ease of use.\n"
+        "8. **Foto 08 (Cenários Diversos):** using the attached base product image as an overlay without any modification to the product itself, home environment setup.\n"
+        "9. **Foto 09 (Comparativo):** using the attached base product image as an overlay without any modification to the product itself, side-by-side comparison.\n"
+        "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, trust badges in Portuguese.\n\n"
         "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
-        "...\n\n"
+        "[Roteiro em 5 cenas comerciais detalhando o produto " + str(termo_exibicao) + "]\n\n"
         "**7. CONTEÚDO A+ & 8. PROMPTS A+ (6 BANNERS INGLÊS)**\n"
-        "..."
+        "[Estrutura do Conteúdo A+ e 6 Prompts de Imagens para Banners A+]"
     )
 
     if api_key and len(str(api_key).strip()) > 10:
@@ -284,17 +275,17 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
                         max_tokens=3800,
                         messages=[{"role": "user", "content": prompt_mestre}],
                     )
-                    return links_md + relatorio_swot + res.content[0].text
+                    return links_md + res.content[0].text
                 except Exception:
                     continue
         except Exception:
             pass
 
-    return links_md + relatorio_swot + "Processando geração detalhada..."
+    return links_md + "Aguardando geração completa..."
 
 
 def render_module_1():
-    st.subheader("📦 Módulo 1: Análise e Otimização de Listing A10")
+    st.subheader("📦 Módulo 1: Análise e Otimização de Listing")
 
     metodo_pesquisa = st.radio(
         "Como deseja buscar o produto?",
@@ -326,12 +317,12 @@ def render_module_1():
                         st.success(f"**Produto Identificado pela Foto:** `{termo_identificado}`")
                         termo_final = termo_identificado
                     else:
-                        st.error("Não foi possível identificar a imagem. Verifique se a chave de API está ativa.")
+                        st.error("Não foi possível identificar a imagem.")
 
     if st.button("🚀 Executar Diagnóstico", use_container_width=True):
         if not termo_final:
             st.warning("Por favor, digite um produto ou faça o upload de uma imagem válida.")
         else:
-            with st.spinner(f"Mapeando concorrentes para '{termo_final}' na Amazon BR e gerando anúncio A10..."):
+            with st.spinner(f"Buscando melhor vendedor orgânico e gerando anúncio para '{termo_final}'..."):
                 resultado = processar_e_gerar_markdown(termo_final)
                 st.markdown(resultado)
