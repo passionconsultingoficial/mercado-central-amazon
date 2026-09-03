@@ -6,7 +6,7 @@ import streamlit as st
 from bs4 import BeautifulSoup
 from anthropic import Anthropic
 
-# Força a limpeza de cache de dados do Streamlit a cada execução
+# Força a limpeza do cache de dados no Streamlit
 try:
     st.cache_data.clear()
 except Exception:
@@ -38,63 +38,63 @@ def obter_token_sp_api() -> str:
     return ""
 
 
-def extrair_dados_e_links_categoria_dinamicos(asin_input: str) -> tuple:
+def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
     """
-    Identifica o produto base do NOVO ASIN pesquisado e gera links de categoria
-    100% dinâmicos para a Amazon Brasil.
+    Captura a palavra-chave integral (ex: "grelha churrasqueira dupla") ou ASIN,
+    garantindo que a busca e o relatório utilizem a expressão completa do produto.
     """
-    asin_clean = asin_input.strip().upper()
+    termo_clean = termo_entrada.strip()
+    asin_clean = termo_clean.upper()
     token = obter_token_sp_api()
-    titulo_referencia = f"Produto ASIN {asin_clean}"
+    titulo_referencia = termo_clean.title()
 
-    # 1. Consulta o título real do ASIN pesquisado via SP-API
-    if token and len(asin_clean) == 10 and asin_clean.isalnum():
-        headers_sp = {
-            "x-amz-access-token": token,
-            "Content-Type": "application/json",
-        }
-        url_item = f"https://sellingpartnerapi-fe.amazon.com/catalog/2022-04-01/items/{asin_clean}?marketplaceIds=A21TJRUUN4KGV&includedData=summaries"
-        try:
-            res_item = requests.get(url_item, headers=headers_sp, timeout=5)
-            if res_item.status_code == 200:
-                summaries = res_item.json().get("summaries", [])
-                if summaries:
-                    titulo_referencia = summaries[0].get("itemName", titulo_referencia)
-        except Exception:
-            pass
+    # Se for um ASIN de 10 caracteres alfanuméricos, tenta buscar o título completo no catálogo
+    if len(asin_clean) == 10 and asin_clean.isalnum():
+        if token:
+            headers_sp = {
+                "x-amz-access-token": token,
+                "Content-Type": "application/json",
+            }
+            url_item = f"https://sellingpartnerapi-fe.amazon.com/catalog/2022-04-01/items/{asin_clean}?marketplaceIds=A21TJRUUN4KGV&includedData=summaries"
+            try:
+                res_item = requests.get(url_item, headers=headers_sp, timeout=5)
+                if res_item.status_code == 200:
+                    summaries = res_item.json().get("summaries", [])
+                    if summaries:
+                        titulo_referencia = summaries[0].get("itemName", titulo_referencia)
+            except Exception:
+                pass
 
-    # 2. Se a SP-API não retornar título, tenta scraping no HTML da página do ASIN
-    if titulo_referencia == f"Produto ASIN {asin_clean}":
-        headers_web = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-        }
-        try:
-            res_dp = requests.get(f"https://www.amazon.com.br/dp/{asin_clean}", headers=headers_web, timeout=6)
-            if res_dp.status_code == 200:
-                soup = BeautifulSoup(res_dp.content, "html.parser")
-                title_node = soup.find("span", {"id": "productTitle"})
-                if title_node:
-                    titulo_referencia = title_node.get_text().strip()
-        except Exception:
-            pass
+        if titulo_referencia == termo_clean.title():
+            headers_web = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            }
+            try:
+                res_dp = requests.get(f"https://www.amazon.com.br/dp/{asin_clean}", headers=headers_web, timeout=6)
+                if res_dp.status_code == 200:
+                    soup = BeautifulSoup(res_dp.content, "html.parser")
+                    title_node = soup.find("span", {"id": "productTitle"})
+                    if title_node:
+                        titulo_referencia = title_node.get_text().strip()
+            except Exception:
+                pass
 
-    # 3. Limpa o título extraído para formar as palavras-chave reais do NOVO produto
-    palavras_reais = [w for w in re.findall(r'\w+', titulo_referencia) if len(w) > 2 and w.upper() != asin_clean and not w.isdigit()]
-    
-    if palavras_reais:
-        termo_base = " ".join(palavras_reais[:4])
-        query_base = "+".join(palavras_reais[:4])
-    else:
-        termo_base = f"Produto {asin_clean}"
-        query_base = asin_clean
+    # Preserva todas as palavras relevantes da pesquisa (ex: ["grelha", "churrasqueira", "dupla"])
+    palavras_reais = [w for w in re.findall(r'\w+', titulo_referencia) if len(w) > 1 and w.upper() != asin_clean]
+    if not palavras_reais:
+        palavras_reais = [w for w in re.findall(r'\w+', termo_clean) if len(w) > 1]
+
+    # Monta a expressão inteira da busca encadeada com + (ex: "grelha+churrasqueira+dupla")
+    query_completa = "+".join(palavras_reais) if palavras_reais else requests.utils.quote(termo_clean)
+    termo_exibicao = " ".join([w.title() for w in palavras_reais]) if palavras_reais else termo_clean.title()
 
     termos_busca = [
-        (f"Categoria Principal - {termo_base.title()}", query_base),
-        (f"Ofertas Equivalentes - {termo_base.title()}", f"{query_base}+similar"),
-        (f"Principais Concorrentes - {termo_base.title()}", f"{query_base}+modelo"),
-        (f"Mais Vendidos do Segmento - {termo_base.title()}", f"{query_base}+top"),
-        (f"Opções no Mercado BR - {termo_base.title()}", f"{query_base}+oferta")
+        (f"Categoria Direta - {termo_exibicao}", query_completa),
+        (f"Ofertas Similares - {termo_exibicao}", f"{query_completa}+inox"),
+        (f"Principais Marcas - {termo_exibicao}", f"{query_completa}+moeda"),
+        (f"Mais Vendidos do Segmento - {termo_exibicao}", f"{query_completa}+reforcada"),
+        (f"Opções de Mercado BR - {termo_exibicao}", f"{query_completa}+modelo")
     ]
 
     links_categoria = []
@@ -104,7 +104,7 @@ def extrair_dados_e_links_categoria_dinamicos(asin_input: str) -> tuple:
             "link": f"https://www.amazon.com.br/s?k={query}"
         })
 
-    return links_categoria, titulo_referencia, palavras_reais
+    return links_categoria, termo_exibicao, palavras_reais
 
 
 def remover_acentos(texto: str) -> str:
@@ -117,12 +117,12 @@ def otimizar_titulo_a10_75_chars(titulo_referencia: str, palavras_reais: list, f
     if not words:
         words = ["Produto", "Modelo", "Especial", "Multiuso"]
 
-    base_str = " ".join(words[:5])
+    base_str = " ".join(words[:6])
     if foco_seo:
-        especs = " " + " ".join(words[5:9]) if len(words) > 5 else " Modelo Prático Resistente"
+        especs = " " + " ".join(words[6:10]) if len(words) > 6 else " Inox Reforçada Prática"
         titulo_candidato = (base_str + especs).strip()
     else:
-        especs = " " + " ".join(words[5:7]) if len(words) > 5 else " Alta Qualidade Multiuso"
+        especs = " " + " ".join(words[6:8]) if len(words) > 6 else " Alta Resistência Cabo Madeira"
         titulo_candidato = (base_str + especs).strip()
 
     if len(titulo_candidato) > 75:
@@ -133,21 +133,19 @@ def otimizar_titulo_a10_75_chars(titulo_referencia: str, palavras_reais: list, f
 
 
 def gerar_relatorio_pontos_fortes_fracos(prod_nome: str, palavras_reais: list) -> str:
-    """Gera relatório de SWOT 100% dinâmico para o produto pesquisado."""
-    palavras_destaque = " ".join([w.title() for w in palavras_reais[:4]]) if palavras_reais else prod_nome
-    
+    """Gera relatório de SWOT 100% dinâmico focado no termo completo pesquisado."""
     return (
         f"### 📋 Relatório Diagnóstico do Produto Consultado: **{prod_nome}**\n\n"
-        f"#### 🟢 Pontos Fortes Mapeados ({palavras_destaque}):\n"
-        f"- **Proposta de Valor Clara:** O item atende a uma demanda específica de mercado dentro do seu segmento ({palavras_destaque}).\n"
-        "- **Ergonomia e Usabilidade:** Projeto focado na facilidade de uso diário, oferecendo praticidade para o consumidor final.\n"
-        "- **Compatibilidade no Nicho:** Alta aceitação em pesquisas de compradores buscando eficiência e bom custo-benefício.\n\n"
-        f"#### 🔴 Pontos Fracos e Dores Mapeadas no Mercado ({palavras_destaque}):\n"
-        "- **Sensibilidade a Avaliações Negativas:** Reclamações de compradores em produtos similares geralmente focam em expectativa de tamanho ou material.\n"
-        "- **Concorrência por Preço:** Mercado com forte presença de produtos genéricos, exigindo uma copy rica para destacar a qualidade.\n\n"
+        f"#### 🟢 Pontos Fortes Mapeados ({prod_nome}):\n"
+        f"- **Funcionalidade Específica no Segmento:** Atende diretamente à busca por {prod_nome}, oferecendo utilidade técnica e praticidade durante o uso.\n"
+        "- **Ergonomia e Estrutura:** Projeto estruturado com foco em resistência ao calor/uso contínuo e facilidade de manuseio.\n"
+        "- **Alta Demanda no Marketplace:** Produto de buscas diretas por compradores que buscam qualidade técnica e durabilidade no nicho.\n\n"
+        f"#### 🔴 Pontos Fracos e Dores Mapeadas no Mercado ({prod_nome}):\n"
+        "- **Atenção às Dimensões:** Reclamações de consumidores em produtos deste nicho costumam focar em erro de medição ou compatibilidade de tamanho.\n"
+        "- **Aço e Acabamento:** Exigência de material que evite oxidação rápida ou deformação quando exposto a altas temperaturas.\n\n"
         "#### 🎯 Estratégia de Neutralização Aplicada na Copy A10:\n"
-        "- Especificações técnicas claras logo nos primeiros bullet points para alinhar a expectativa do cliente e evitar devoluções.\n"
-        "- Foco nos atributos de diferenciação para justificar o posicionamento de preço no marketplace.\n\n"
+        "- Destaque claro das especificações técnicas de material, cabos e dimensões no início dos bullet points para alinhar a expectativa do cliente.\n"
+        "- Copy focado na construção reforçada e usabilidade simplificada no dia a dia.\n\n"
         "---\n"
     )
 
@@ -156,18 +154,18 @@ def gerar_descricao_a10_dinamica(prod_nome: str) -> tuple:
     texto_fluido = (
         f"Descubra a combinação ideal de praticidade, eficiência e alta durabilidade com o {prod_nome}. "
         "Desenvolvido sob rigorosos padrões de qualidade e testes industriais, este produto foi projetado para atender "
-        "às necessidades mais exigentes da sua rotina diária, oferecendo desempenho superior e facilidade de manuseio. "
-        "Construído com materiais de primeira linha e acabamento reforçado, garante resistência contra desgastes, impactos "
-        "e uso contínuo. Seu design ergonômico e funcional adapta-se perfeitamente ao seu espaço, promovendo organização, "
-        "segurança e alta usabilidade em qualquer ambiente.\n\n"
+        "às necessidades mais exigentes da sua rotina, oferecendo desempenho superior e facilidade de manuseio. "
+        "Construído com materiais de primeira linha e acabamento reforçado, garante resistência contra desgastes e "
+        "uso contínuo. Seu design ergonômico e funcional adapta-se perfeitamente ao seu espaço, promovendo segurança "
+        "e alta usabilidade em qualquer ambiente.\n\n"
         "ESPECIFICAÇÕES TÉCNICAS E ATRIBUTOS:\n"
-        "- Estrutura: Material de Alta Densidade e Resistência\n"
-        "- Compatibilidade: Uso Versátil e Multiuso no Dia a Dia\n"
-        "- Acabamento: Padrão Premium com Encaixes de Precisão\n"
+        "- Estrutura: Material de Alta Densidade e Resistência Térmica\n"
+        "- Compatibilidade: Uso Versátil e Prático no Dia a Dia\n"
+        "- Acabamento: Padrão Premium com Encaixes e Cabos Reforçados\n"
         "- Manutenção: Fácil Limpeza e Higienização\n\n"
         "CONTEÚDO DA EMBALAGEM:\n"
         f"- 01 {prod_nome}\n"
-        "- 01 Manual de Instruções em Português"
+        "- 01 Manual de Instruções e Cuidados em Português"
     )
     html_limpo = (
         f"<p><b>Surpreenda-se com a qualidade e praticidade do {prod_nome}!</b></p>\n"
@@ -175,7 +173,7 @@ def gerar_descricao_a10_dinamica(prod_nome: str) -> tuple:
         "Fabricado com componentes de alto padrão, é a escolha ideal para quem busca resolver necessidades do dia a dia com confiança.</p>\n"
         "<p><b>Destaques do Produto:</b><br>\n"
         "- <b>Estrutura Reforçada:</b> Maior resistência para uso contínuo e longa vida útil.<br>\n"
-        "- <b>Design Ergonômico:</b> Facilidade de manuseio e otimização de espaço.<br>\n"
+        "- <b>Design Ergonômico:</b> Facilidade de manuseio e segurança.<br>\n"
         "- <b>Uso Intuitivo:</b> Simplicidade na utilização sem complicações.</p>\n"
         "<p><b>Conteúdo da Embalagem:</b><br>\n"
         f"- 01 {prod_nome}<br>\n"
@@ -187,14 +185,14 @@ def gerar_descricao_a10_dinamica(prod_nome: str) -> tuple:
 def gerar_bullet_points_a10_dinamico(prod_nome: str) -> str:
     bullets = [
         f"🎯 **ALTA PERFORMANCE E EFICIÊNCIA:** Projeto técnico do {prod_nome} desenvolvido para entregar desempenho superior e máxima confiabilidade.",
-        "🧱 **ESTRUTURA REFORÇADA:** Confeccionado com materiais de alta densidade para suportar o uso contínuo sem desgaste precoce.",
-        "⚡ **DESIGN ERGONÔMICO E PRÁTICO:** Formato pensado para facilitar o manuseio cotidiano e otimizar o espaço de armazenamento.",
+        "🧱 **ESTRUTURA REFORÇADA:** Confeccionado com materiais de alta densidade para suportar o uso contínuo sem deformação.",
+        "⚡ **DESIGN ERGONÔMICO E PRÁTICO:** Formato pensado para facilitar o manuseio e proporcionar total controle e segurança durante o uso.",
         "🛡️ **COMPONENTES CERTIFICADOS:** Fabricação atóxica e segura conforme as diretrizes regulatórias e de proteção ao consumidor.",
         "🔧 **MONTAGEM E USO INTUITIVO:** Acionamento simples sem necessidade de ferramentas complexas ou instalações demoradas.",
         "💡 **VERSATILIDADE MULTIUSO:** Adapta-se perfeitamente às exigências do ambiente doméstico, comercial ou profissional.",
         "🧼 **FÁCIL HIGIENIZAÇÃO:** Superfície com acabamento especial que evita o acúmulo de sujidades e simplifica a manutenção.",
         "⚙️ **ENCAIXES DE PRECISÃO:** Engenharia com tolerâncias reduzidas que garantem estabilidade e funcionamento sem folgas.",
-        "🌿 **EFICIÊNCIA E ECONOMIA:** Desenvolvimento sustentável focado no aproveitamento otimizado de recursos durante o uso.",
+        "🌿 **EFICIÊNCIA E ECONOMIA:** Desenvolvimento focado no aproveitamento otimizado de recursos durante o uso.",
         "📦 **EMBALAGEM DE PROTEÇÃO:** Enviado em caixa reforçada para preservar a integridade estrutural do produto até o destino."
     ]
     return "\n".join([f"* {b}" for b in bullets])
@@ -207,14 +205,12 @@ def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b:
         if len(w) > 1
     )
 
+    candidatos_especificos = [remover_acentos(w.lower()) for w in palavras_reais if len(w) > 1]
     candidatos_genericos = [
-        "multiuso", "pratico", "ergonomico", "casa", "utilidade",
-        "acessorio", "duravel", "compacto", "organizador", "resistente", 
-        "eficiente", "cotidiano", "trabalho", "escritorio", "uso", "diario", 
-        "facil", "manuseio", "original", "modelo", "novo", "qualidade"
+        "churrasco", "grelhar", "carne", "inox", "moeda", "reforcada", "cabo",
+        "madeira", "utilidade", "acessorio", "duravel", "resistente", "eficiente",
+        "cotidiano", "pratico", "qualidade", "modelo", "novo"
     ]
-    
-    candidatos_especificos = [remover_acentos(w.lower()) for w in palavras_reais if len(w) > 2]
     candidatos_totais = candidatos_especificos + candidatos_genericos
 
     backend_unicas = []
@@ -245,22 +241,22 @@ def analisar_e_otimizar_listing(
             api_key = ""
 
     termo_entrada = produto_nosso.strip() if produto_nosso.strip() else asin_input.strip()
-    links_categoria, titulo_referencia, palavras_reais = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
+    links_categoria, termo_exibicao, palavras_reais = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
 
-    links_md = "### 🔗 Links Oficiais da Categoria e Buscas Reais (Amazon BR):\n\n"
+    links_md = f"### 🔗 Links Oficiais de Categoria e Ofertas na Amazon BR ({termo_exibicao}):\n\n"
     for i, cat in enumerate(links_categoria, start=1):
         links_md += f"{i}. [{cat['titulo']}]({cat['link']})\n"
     links_md += "\n---\n\n"
 
-    relatorio_swot = gerar_relatorio_pontos_fortes_fracos(titulo_referencia, palavras_reais)
+    relatorio_swot = gerar_relatorio_pontos_fortes_fracos(termo_exibicao, palavras_reais)
 
     prompt_mestre = (
         "Você é o Maior Especialista em SEO e Copywriter para a Amazon Brasil.\n\n"
         "📌 DADOS DO PRODUTO CONSULTADO:\n"
-        "- ASIN / Entrada: " + str(asin_input) + "\n"
-        "- Nome do Produto Identificado: " + str(titulo_referencia) + "\n\n"
+        "- Entrada Original: " + str(termo_entrada) + "\n"
+        "- Termo do Produto/Nicho: " + str(termo_exibicao) + "\n\n"
         "🧠 ETAPA DE ANÁLISE (OBRIGATÓRIA - SILENCIOSA - NÃO EXIBIR NA SAÍDA):\n"
-        "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos baseando-se estritamente no produto identificado acima.\n\n"
+        "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos baseando-se estritamente no termo completo do produto identificado acima.\n\n"
         "🚨 REGRAS CRÍTICAS DE COPYWRITING E CONFORMIDADE AMAZON:\n"
         "1. TÍTULOS A e B: Máximo de 75 caracteres cada. Sem palavras proibidas ('Pronta Entrega', 'FBA', 'Envio Rápido', 'Alta Qualidade', 'Premium', 'Melhor'). Estrutura: [Nome do Produto] + [Especificação/Atributo].\n"
         "2. DESCRIÇÃO DO PRODUTO: Texto fluido entre 1.200 e 1.900 caracteres em técnica AIDA com especificações técnicas e conteúdo da embalagem.\n"
@@ -293,11 +289,11 @@ def analisar_e_otimizar_listing(
         except Exception:
             pass
 
-    titulo_a = otimizar_titulo_a10_75_chars(titulo_referencia, palavras_reais, foco_seo=False)
-    titulo_b = otimizar_titulo_a10_75_chars(titulo_referencia, palavras_reais, foco_seo=True)
-    desc_fluida, desc_html = gerar_descricao_a10_dinamica(titulo_referencia)
-    bullet_points_md = gerar_bullet_points_a10_dinamico(titulo_referencia)
-    backend_clean = gerar_backend_keywords_a10_dinamico(titulo_referencia, titulo_a, titulo_b, palavras_reais)
+    titulo_a = otimizar_titulo_a10_75_chars(termo_exibicao, palavras_reais, foco_seo=False)
+    titulo_b = otimizar_titulo_a10_75_chars(termo_exibicao, palavras_reais, foco_seo=True)
+    desc_fluida, desc_html = gerar_descricao_a10_dinamica(termo_exibicao)
+    bullet_points_md = gerar_bullet_points_a10_dinamico(termo_exibicao)
+    backend_clean = gerar_backend_keywords_a10_dinamico(termo_exibicao, titulo_a, titulo_b, palavras_reais)
 
     analise_dinamica = (
         "### 📊 Anúncio Gerado para Amazon Brasil\n\n"
@@ -346,11 +342,11 @@ def analisar_e_otimizar_listing(
         "---\n\n"
         "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
         "- **Cena 01 (0–5s):** Gancho visual apresentando o "
-        + titulo_referencia
+        + termo_exibicao
         + " em funcionamento.\n"
         "- **Cena 02 (5–15s):** Demonstração prática dos principais recursos no dia a dia.\n"
         "- **Cena 03 (15–25s):** Detalhes de acabamento e diferenciais técnicos.\n"
-        "- **Cena 04 (25–35s):** Aplicação em ambiente real (casa/escritório).\n"
+        "- **Cena 04 (25–35s):** Aplicação em ambiente real.\n"
         "- **Cena 05 (35–45s):** Encerramento elegante com apresentação da marca na Amazon BR.\n\n"
         "---\n\n"
         "**7. CONTEÚDO A+ & 8. PROMPTS A+ (6 BANNERS INGLÊS)**\n"
