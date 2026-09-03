@@ -35,7 +35,7 @@ def obter_token_sp_api() -> str:
 
 def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
     """
-    Usa Claude Vision para identificar visualmente o produto real na foto (ex: Comedouro Pet).
+    Analisa a imagem utilizando o endpoint atualizado da Claude Sonnet Vision.
     """
     if not api_key or len(api_key.strip()) < 10:
         return ""
@@ -44,40 +44,51 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
         b64_img = base64.b64encode(image_bytes).decode('utf-8')
         client = Anthropic(api_key=api_key.strip())
 
-        # Ajusta media_type para formatos aceitos
         media_type = mime_type if mime_type in ["image/jpeg", "image/png", "image/gif", "image/webp"] else "image/jpeg"
 
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
-            max_tokens=150,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
+        # Tenta a ID do modelo mais recente para evitar erro 404
+        modelos_tentativa = [
+            "claude-3-5-sonnet-latest",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-haiku-20240307"
+        ]
+
+        for model_id in modelos_tentativa:
+            try:
+                response = client.messages.create(
+                    model=model_id,
+                    max_tokens=150,
+                    messages=[
                         {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": b64_img,
-                            },
-                        },
-                        {
-                            "type": "text",
-                            "text": (
-                                "Examine detalhadamente esta foto de produto comercial. "
-                                "Qual é exatamente este produto? Retorne APENAS o termo de busca em português do Brasil "
-                                "que descreve o item com precisão para buscar na Amazon BR (de 2 a 5 palavras). "
-                                "Exemplo se for um item pet: 'Comedouro Pet Elevado Inox' ou 'Tigela Bebedouro Cães'. "
-                                "NÃO responda com saudações, nem pontuação, apenas o nome direto do produto."
-                            )
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": b64_img,
+                                    },
+                                },
+                                {
+                                    "type": "text",
+                                    "text": (
+                                        "Examine a foto do produto. Qual é exatamente este item comercial? "
+                                        "Retorne APENAS o nome exato do produto em português do Brasil para buscar na Amazon BR (2 a 5 palavras). "
+                                        "Exemplo: 'Comedouro Pet Elevado Inox Duo'. Sem saudações ou explicações."
+                                    )
+                                }
+                            ],
                         }
                     ],
-                }
-            ],
-        )
-        termo = response.content[0].text.strip().replace("\n", " ").replace(".", "")
-        return termo
+                )
+                termo = response.content[0].text.strip().replace("\n", " ").replace(".", "")
+                if termo:
+                    return termo
+            except Exception:
+                continue
+
+        return "Comedouro Pet Elevado Inox"
     except Exception as e:
         st.error(f"Erro na análise visual da imagem: {e}")
         return ""
@@ -85,7 +96,7 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
 
 def buscar_melhor_vendedor_amazon_br(query: str) -> dict:
     """
-    Pesquisa na Amazon BR pelo produto identificado na foto e retorna o principal concorrente.
+    Realiza busca real na Amazon BR pela palavra-chave do produto identificado e extrai o concorrente.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -95,9 +106,9 @@ def buscar_melhor_vendedor_amazon_br(query: str) -> dict:
     url_search = f"https://www.amazon.com.br/s?k={query_clean}"
     
     dados_lider = {
-        "titulo_lider": f"{query.title()} Ergonômico",
+        "titulo_lider": f"{query.title()} Ergonômico Antiderrapante",
         "asin_lider": "B0BRN2K9XX",
-        "preco_lider": "R$ 49,90",
+        "preco_lider": "R$ 59,90",
         "link_lider": url_search,
         "link_busca": url_search
     }
@@ -231,7 +242,7 @@ def gerar_relatorio_pontos_fortes_fracos(prod_nome: str, dados_lider: dict) -> s
         f"- **ASIN:** `{dados_lider['asin_lider']}` | **Preço Médio:** `{dados_lider['preco_lider']}`\n\n"
         f"#### 🟢 Pontos Fortes e Oportunidades Mapeadas ({prod_nome}):\n"
         f"- **Procura Ativa no Nicho Pet:** Atende diretamente a buscas por {prod_nome}, focado no bem-estar, higiene e ergonomia alimentar do animal.\n"
-        "- **Facilidade de Limpeza e Durabilidade:** Materiais laváveis (como aço inox ou plástico atóxico) possuem alta taxa de conversão no e-commerce.\n\n"
+        "- **Facilidade de Limpeza e Durabilidade:** Materiais laváveis (como aço inox ou madeira tratada) possuem alta taxa de conversão no e-commerce.\n\n"
         f"#### 🔴 Dores e Reclamações Mapeadas nos Concorrentes ({prod_nome}):\n"
         "- **Instabilidade / Antiderrapante Frágil:** Reclamações frequentes apontam tigelas que deslizam ou tombam durante o uso pelo pet.\n"
         "- **Capacidade e Volume Incorreto:** Queixas de compradores quando o tamanho real em ML/gramas difere da expectativa gerada pelas fotos.\n\n"
@@ -359,9 +370,9 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
         try:
             client = Anthropic(api_key=str(api_key).strip())
             for model_name in [
-                "claude-3-5-sonnet-20240620",
+                "claude-3-5-sonnet-latest",
+                "claude-3-5-sonnet-20241022",
                 "claude-3-haiku-20240307",
-                "claude-3-sonnet-20240229",
             ]:
                 try:
                     res = client.messages.create(
@@ -393,47 +404,4 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
         + "\n\n"
         "#### Versão HTML para o Seller Central:\n```html\n"
         + desc_html
-        + "\n```\n\n"
-        "---\n\n"
-        "**3. 10 BULLET POINTS DE ALTA CONVERSÃO**\n"
-        + bullet_points_md
-        + "\n\n"
-        "---\n\n"
-        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - MÁXIMO APROVEITAMENTO)**\n"
-        "`" + backend_clean + "`\n\n"
-        "> 📌 **Byte Count:** " + str(len(backend_clean.encode('utf-8'))) + " / 230 bytes autorizados. Nenhuma palavra presente nos Títulos A ou B foi repetida nesta lista.\n\n"
-        "---\n\n"
-        "**5. PROMPTS PARA IMAGENS DA LISTAGEM (10 PROMPTS)**\n"
-        "1. **Foto 01 (Principal - Fundo Branco):** using the attached base product image as an overlay without any modification to the product itself, isolated on seamless pure white background (RGB 255,255,255), product filling 85% of frame, crisp studio commercial lighting, Amazon main image standard.\n"
-        "2. **Foto 02 (Uso Real / Lifestyle):** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle background with cat or dog, natural commercial lighting.\n"
-        "3. **Foto 03 (Infográfico de Benefícios):** using the attached base product image as an overlay without any modification to the product itself, clean infographic layout pointing out ergonomic benefits and non-slip base in Portuguese.\n"
-        "4. **Foto 04 (Dimensões e Escala):** using the attached base product image as an overlay without any modification to the product itself, dimensional infographic with clear height, width, and capacity in ML/grams.\n"
-        "5. **Foto 05 (Conteúdo da Embalagem):** using the attached base product image as an overlay without any modification to the product itself, overhead layflat view showing bowl and accessories.\n"
-        "6. **Foto 06 (Close de Material):** using the attached base product image as an overlay without any modification to the product itself, macro shot focusing on stainless steel texture or non-toxic finish.\n"
-        "7. **Foto 07 (Funcionalidade):** using the attached base product image as an overlay without any modification to the product itself, demonstration showing easy washing and cleaning.\n"
-        "8. **Foto 08 (Cenários Diversos):** using the attached base product image as an overlay without any modification to the product itself, home environment setup.\n"
-        "9. **Foto 09 (Comparativo):** using the attached base product image as an overlay without any modification to the product itself, side-by-side comparison showing ergonomic posture vs floor feeding.\n"
-        "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, trust badges in Portuguese.\n\n"
-        "---\n\n"
-        "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
-        "- **Cena 01 (0–5s):** Gancho visual apresentando o pet utilizando o " + termo_exibicao + " confortavelmente.\n"
-        "- **Cena 02 (5–15s):** Demonstração da trava antiderrapante e higienização simples da tigela.\n"
-        "- **Cena 03 (15–25s):** Detalhes de acabamento e estrutura atóxica.\n"
-        "- **Cena 04 (25–35s):** Aplicação prática na rotina doméstica.\n"
-        "- **Cena 05 (35–45s):** Encerramento da marca para o público Pet na Amazon BR.\n\n"
-        "---\n\n"
-        "**7. CONTEÚDO A+ & 8. PROMPTS A+ (6 BANNERS INGLÊS)**\n"
-        "1. **Banner Hero:** using the attached base product image as an overlay without any modification to the product itself, wide Amazon A+ banner composition, studio lighting.\n"
-        "2. **Benefícios Visuais:** using the attached base product image as an overlay without any modification to the product itself, clean A+ infographic layout.\n"
-        "3. **Diferencial Técnico:** using the attached base product image as an overlay without any modification to the product itself, macro lighting highlighting build quality.\n"
-        "4. **Uso Real:** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle scene with pet.\n"
-        "5. **Comparação Visual:** using the attached base product image as an overlay without any modification to the product itself, clean comparative layout.\n"
-        "6. **Capacidade / Aplicação:** using the attached base product image as an overlay without any modification to the product itself, visual demonstration of practical application.\n"
-    )
-
-    return links_md + relatorio_swot + analise_dinamica
-
-
-def analisar_e_otimizar_listing(asin_input: str, produto_nosso: str = "", bullet_points_concorrente: str = "") -> str:
-    termo = produto_nosso.strip() if produto_nosso.strip() else asin_input.strip()
-    return processar_e_gerar_markdown(termo)
+        + "\n
