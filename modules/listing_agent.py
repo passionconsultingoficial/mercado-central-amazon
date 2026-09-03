@@ -1,12 +1,13 @@
 import os
 import re
+import base64
 import requests
 import unicodedata
 import streamlit as st
 from bs4 import BeautifulSoup
 from anthropic import Anthropic
 
-# Força a limpeza de cache de dados no Streamlit
+# Força a limpeza do cache de dados no Streamlit a cada renderização
 try:
     st.cache_data.clear()
 except Exception:
@@ -38,17 +39,59 @@ def obter_token_sp_api() -> str:
     return ""
 
 
+def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
+    """
+    Utiliza Claude 3.5 Sonnet Vision para analisar a foto do produto e identificar
+    o nome exato do produto e categoria técnica em português.
+    """
+    if not api_key or len(api_key.strip()) < 10:
+        return "Produto Identificado por Imagem"
+
+    try:
+        b64_img = base64.b64encode(image_bytes).decode('utf-8')
+        client = Anthropic(api_key=api_key.strip())
+
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20240620",
+            max_tokens=150,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": mime_type,
+                                "data": b64_img,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Analise a imagem deste produto comercial. Retorne APENAS o nome exato e preciso do produto "
+                                "em português do Brasil (2 a 5 palavras). Exemplo: 'Grelha Churrasqueira Dupla Inox' ou 'Prensa Francesa Vidro'. "
+                                "Não inclua explicações ou saudações, apenas a expressão principal."
+                            )
+                        }
+                    ],
+                }
+            ],
+        )
+        return response.content[0].text.strip()
+    except Exception:
+        return "Produto Identificado por Imagem"
+
+
 def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
     """
-    Captura a palavra-chave integral (ex: "grelha churrasqueira dupla") ou ASIN,
-    garantindo que a busca e o relatório utilizem a expressão completa do produto.
+    Captura a palavra-chave integral ou ASIN e gera os links de busca de categoria na Amazon BR.
     """
     termo_clean = termo_entrada.strip()
     asin_clean = termo_clean.upper()
     token = obter_token_sp_api()
     titulo_referencia = termo_clean.title()
 
-    # Se for um ASIN de 10 caracteres alfanuméricos, busca o título na SP-API ou Web
     if len(asin_clean) == 10 and asin_clean.isalnum():
         if token:
             headers_sp = {
@@ -89,10 +132,10 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
 
     termos_busca = [
         (f"Categoria Direta - {termo_exibicao}", query_completa),
-        (f"Ofertas Similares - {termo_exibicao}", f"{query_completa}+inox"),
-        (f"Principais Marcas - {termo_exibicao}", f"{query_completa}+moeda"),
-        (f"Mais Vendidos do Segmento - {termo_exibicao}", f"{query_completa}+reforcada"),
-        (f"Opções de Mercado BR - {termo_exibicao}", f"{query_completa}+modelo")
+        (f"Ofertas Similares - {termo_exibicao}", f"{query_completa}+modelo"),
+        (f"Principais Marcas - {termo_exibicao}", f"{query_completa}+reforcada"),
+        (f"Mais Vendidos do Segmento - {termo_exibicao}", f"{query_completa}+top"),
+        (f"Opções de Mercado BR - {termo_exibicao}", f"{query_completa}+oferta")
     ]
 
     links_categoria = []
@@ -111,10 +154,6 @@ def remover_acentos(texto: str) -> str:
 
 
 def otimizar_titulo_a10_75_chars(titulo_referencia: str, palavras_reais: list, foco_seo: bool = False) -> str:
-    """
-    Maximiza o uso do limite de 75 caracteres no título da Amazon Brasil.
-    Preenche qualificadores mantendo a conformidade A10 (sem termos proibidos).
-    """
     words = [w.title() for w in palavras_reais if len(w) > 1]
     base_prod = " ".join(words) if words else titulo_referencia.strip().title()
 
@@ -145,7 +184,6 @@ def otimizar_titulo_a10_75_chars(titulo_referencia: str, palavras_reais: list, f
 
 
 def gerar_relatorio_pontos_fortes_fracos(prod_nome: str, palavras_reais: list) -> str:
-    """Gera relatório de SWOT 100% dinâmico focado no termo completo pesquisado."""
     return (
         f"### 📋 Relatório Diagnóstico do Produto Consultado: **{prod_nome}**\n\n"
         f"#### 🟢 Pontos Fortes Mapeados ({prod_nome}):\n"
@@ -211,10 +249,6 @@ def gerar_bullet_points_a10_dinamico(prod_nome: str) -> str:
 
 
 def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b: str, palavras_reais: list) -> str:
-    """
-    Maximiza o preenchimento das Backend Keywords até o limite estrito de 230 bytes.
-    Garante que nenhuma palavra utilizada nos títulos A ou B seja repetida.
-    """
     palavras_titulos = set(
         remover_acentos(w.lower()) 
         for w in re.findall(r'\w+', titulo_a + " " + titulo_b)
@@ -222,18 +256,14 @@ def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b:
     )
 
     candidatos_especificos = [remover_acentos(w.lower()) for w in palavras_reais if len(w) > 1]
-    
-    # Banco ampliado de termos semânticos e sinônimos de e-commerce
     candidatos_genericos = [
         "churrasco", "grelhar", "carne", "inox", "moeda", "reforcada", "cabo",
         "madeira", "utilidade", "acessorio", "duravel", "resistente", "eficiente",
         "cotidiano", "pratico", "qualidade", "modelo", "novo", "espeto", "parrilla",
         "picanha", "linguica", "frango", "churrasqueira", "fogo", "carvao", "grelhado",
         "assado", "tambor", "portatil", "varanda", "gourmet", "tampa", "trava", "fecho",
-        "dupla", "giratoria", "marmita", "utensilio", "domestico", "area", "externa",
-        "ferramenta", "cozinha", "servir", "refeicao", "preparo", "alimento", "firme"
+        "dupla", "giratoria", "marmita", "utensilio", "domestico", "area", "externa"
     ]
-
     candidatos_totais = candidatos_especificos + candidatos_genericos
 
     backend_unicas = []
@@ -245,7 +275,6 @@ def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b:
     resultado = ""
     for palavra in backend_unicas:
         candidato_string = (resultado + " " + palavra).strip() if resultado else palavra
-        # Verifica rigorosamente o byte count UTF-8 para não estourar 230 bytes
         if len(candidato_string.encode("utf-8")) <= 230:
             resultado = candidato_string
         else:
@@ -254,17 +283,9 @@ def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b:
     return resultado
 
 
-def analisar_e_otimizar_listing(
-    asin_input: str, produto_nosso: str = "", bullet_points_concorrente: str = ""
-) -> str:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        try:
-            api_key = st.secrets["ANTHROPIC_API_KEY"]
-        except Exception:
-            api_key = ""
-
-    termo_entrada = produto_nosso.strip() if produto_nosso.strip() else asin_input.strip()
+def processar_e_gerar_markdown(termo_entrada: str) -> str:
+    """Gera o relatório markdown formatado para exibição."""
+    api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
     links_categoria, termo_exibicao, palavras_reais = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
 
     links_md = f"### 🔗 Links Oficiais de Categoria e Ofertas na Amazon BR ({termo_exibicao}):\n\n"
@@ -340,46 +361,4 @@ def analisar_e_otimizar_listing(
         "#### Versão HTML para o Seller Central:\n"
         "```html\n"
         + desc_html
-        + "\n```\n\n"
-        "---\n\n"
-        "**3. 10 BULLET POINTS DE ALTA CONVERSÃO**\n"
-        + bullet_points_md
-        + "\n\n"
-        "---\n\n"
-        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - MÁXIMO APROVEITAMENTO)**\n"
-        "`"
-        + backend_clean
-        + "`\n\n"
-        "> 📌 **Byte Count:** " + str(len(backend_clean.encode('utf-8'))) + " / 230 bytes autorizados. Nenhuma palavra presente nos Títulos A ou B foi repetida nesta lista.\n\n"
-        "---\n\n"
-        "**5. PROMPTS PARA IMAGENS DA LISTAGEM (10 PROMPTS)**\n"
-        "1. **Foto 01 (Principal - Fundo Branco):** using the attached base product image as an overlay without any modification to the product itself, isolated on seamless pure white background (RGB 255,255,255), product filling 85% of frame, crisp studio commercial lighting, Amazon main image standard.\n"
-        "2. **Foto 02 (Uso Real / Lifestyle):** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle background, natural commercial lighting.\n"
-        "3. **Foto 03 (Infográfico de Benefícios):** using the attached base product image as an overlay without any modification to the product itself, clean infographic layout with callout lines pointing to key features, Portuguese text space.\n"
-        "4. **Foto 04 (Dimensões e Escala):** using the attached base product image as an overlay without any modification to the product itself, dimensional infographic with clear height and width scale indicators in Portuguese.\n"
-        "5. **Foto 05 (Conteúdo da Embalagem):** using the attached base product image as an overlay without any modification to the product itself, overhead layflat view showing product and accessories.\n"
-        "6. **Foto 06 (Close de Material):** using the attached base product image as an overlay without any modification to the product itself, extreme macro shot focusing on material texture and finish.\n"
-        "7. **Foto 07 (Funcionalidade):** using the attached base product image as an overlay without any modification to the product itself, demonstration composition highlighting core functionality.\n"
-        "8. **Foto 08 (Cenários Diversos):** using the attached base product image as an overlay without any modification to the product itself, multi-scenario usage representation.\n"
-        "9. **Foto 09 (Comparativo):** using the attached base product image as an overlay without any modification to the product itself, side-by-side visual comparison highlighting premium build vs generic alternative.\n"
-        "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, summary banner with trust badges in Portuguese text.\n\n"
-        "---\n\n"
-        "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
-        "- **Cena 01 (0–5s):** Gancho visual apresentando o "
-        + termo_exibicao
-        + " em funcionamento.\n"
-        "- **Cena 02 (5–15s):** Demonstração prática dos principais recursos no dia a dia.\n"
-        "- **Cena 03 (15–25s):** Detalhes de acabamento e diferenciais técnicos.\n"
-        "- **Cena 04 (25–35s):** Aplicação em ambiente real.\n"
-        "- **Cena 05 (35–45s):** Encerramento elegante com apresentação da marca na Amazon BR.\n\n"
-        "---\n\n"
-        "**7. CONTEÚDO A+ & 8. PROMPTS A+ (6 BANNERS INGLÊS)**\n"
-        "1. **Banner Hero:** using the attached base product image as an overlay without any modification to the product itself, wide Amazon A+ banner composition, studio lighting.\n"
-        "2. **Benefícios Visuais:** using the attached base product image as an overlay without any modification to the product itself, clean A+ infographic layout.\n"
-        "3. **Diferencial Técnico:** using the attached base product image as an overlay without any modification to the product itself, macro lighting highlighting build quality.\n"
-        "4. **Uso Real:** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle scene.\n"
-        "5. **Comparação Visual:** using the attached base product image as an overlay without any modification to the product itself, clean comparative layout.\n"
-        "6. **Capacidade / Aplicação:** using the attached base product image as an overlay without any modification to the product itself, visual demonstration of practical application.\n"
-    )
-
-    return links_md + relatorio_swot + analise_dinamica
+        + "\n
