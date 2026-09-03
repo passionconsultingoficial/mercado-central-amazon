@@ -34,7 +34,7 @@ def obter_token_sp_api() -> str:
 
 
 def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
-    """Análise visual via Claude Vision para identificação do produto."""
+    """Análise multimodal via Claude Vision para extração do nome do produto comercial."""
     if not api_key or len(api_key.strip()) < 10:
         return ""
 
@@ -69,10 +69,10 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
                                 {
                                     "type": "text",
                                     "text": (
-                                        "Examine este produto comercial na foto. "
-                                        "Retorne APENAS o termo de busca em português do Brasil "
-                                        "para pesquisar na Amazon BR (de 2 a 5 palavras). "
-                                        "Exemplo: 'Panela de Pressao 4,5L Inox'. Sem pontuação ou saudações."
+                                        "Qual é exatamente o produto nesta imagem comercial? "
+                                        "Retorne APENAS a expressão de busca direta em português do Brasil (2 a 5 palavras). "
+                                        "Exemplo: 'Comedouro Pet Elevado Inox Duo' ou 'Panela de Pressao 4,5L Inox'. "
+                                        "Sem explicações, saudações ou pontuação."
                                     )
                                 }
                             ],
@@ -87,13 +87,13 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
 
         return ""
     except Exception as e:
-        st.error(f"Erro na análise visual: {e}")
+        st.error(f"Erro no processamento da imagem: {e}")
         return ""
 
 
 def buscar_melhor_vendedor_organico_amazon_br(query: str) -> dict:
     """
-    Ignora anúncios patrocinados (Ads) e extrai o primeiro resultado orgânico da Amazon BR.
+    Filtra anúncios patrocinados (Ads) e extrai o primeiro resultado orgânico da Amazon BR.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -116,7 +116,7 @@ def buscar_melhor_vendedor_organico_amazon_br(query: str) -> dict:
             produtos = soup.find_all("div", {"data-component-type": "s-search-result"})
             
             for prod in produtos:
-                # FILTRA PATROCINADOS / ADS
+                # IGNORA RESULTADOS PATROCINADOS / ADS
                 is_sponsored = (
                     prod.find("span", string=re.compile(r"Patrocinado|Sponsored", re.I)) or
                     "puppy-pi-carousel" in str(prod) or
@@ -184,7 +184,7 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
     termos_busca = [
         (f"Categoria Direta - {titulo_referencia}", query_encoded),
         (f"Ofertas Similares - {titulo_referencia}", f"{query_encoded}+modelo"),
-        (f"Principais Marcas - {titulo_referencia}", f"{query_encoded}+top"),
+        (f"Principais Marcas do Nicho - {titulo_referencia}", f"{query_encoded}+top"),
         (f"Mais Vendidos do Segmento - {titulo_referencia}", f"{query_encoded}+reforcado"),
         (f"Opções de Mercado BR - {titulo_referencia}", f"{query_encoded}+oferta")
     ]
@@ -201,85 +201,91 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
 
 def processar_e_gerar_markdown(termo_entrada: str) -> str:
     api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+    
+    if not api_key:
+        return "⚠️ **Chave de API não encontrada.** Configure a variável `ANTHROPIC_API_KEY` nos Secrets do Streamlit."
+
     links_categoria, termo_exibicao = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
     dados_lider = buscar_melhor_vendedor_organico_amazon_br(termo_exibicao)
 
-    links_md = f"### 🔗 Links da Categoria e Buscas Reais (Amazon BR):\n\n"
+    links_md = f"### 🔗 Links Oficiais da Categoria e Buscas Reais (Amazon BR):\n\n"
     for i, cat in enumerate(links_categoria, start=1):
         links_md += f"{i}. [{cat['titulo']}]({cat['link']})\n"
     links_md += "\n---\n\n"
 
     prompt_mestre = (
-        f"Você é o Maior Especialista em SEO e Copywriting para E-commerce na Amazon Brasil.\n\n"
-        f"📌 DADOS PARA ANÁLISE COMPARATIVA E CRIAÇÃO DO ANÚNCIO:\n"
-        f"- Produto Solicitado: {termo_exibicao}\n"
-        f"- Concorrente Líder Orgânico (Amazon BR): {dados_lider['titulo_lider']} (ASIN: {dados_lider['asin_lider']} | Preço: {dados_lider['preco_lider']})\n\n"
-        "GERE A RESPOSTA ORGANIZADA E COMPLETA EXATAMENTE NESTE FORMATO MARKDOWN:\n\n"
-        "### 📋 Relatório Comparativo: Nosso Produto vs. Líder de Vendas\n\n"
+        f"Você é o Maior Especialista em SEO, Copywriting de Alta Conversão e Algoritmo A10 da Amazon Brasil.\n\n"
+        f"📌 DADOS PARA ANÁLISE COMPARATIVA E CRIAÇÃO COMPLETA DO ANÚNCIO:\n"
+        f"- Produto Alvo / Categoria: {termo_exibicao}\n"
+        f"- Concorrente Líder Orgânico Mapeado: {dados_lider['titulo_lider']} (ASIN: {dados_lider['asin_lider']} | Preço Praticado: {dados_lider['preco_lider']})\n\n"
+        "GERE A RESPOSTA COMPLETA E DETALHADA EM MARKDOWN SEGUINDO ESTRITAMENTE A ESTRUTURA DE 9 SEÇÕES ABAIXO:\n\n"
+        "### 📋 Relatório Comparativo: Nosso Produto vs. Líder de Vendas Orgânico\n\n"
         "| Métrica / Atributo | Concorrente Líder (Amazon BR) | Nossa Estratégia de Produto |\n"
         "| :--- | :--- | :--- |\n"
-        f"| **Anúncio Benchmark** | [{dados_lider['titulo_lider']}]({dados_lider['link_lider']}) | Otimização para Superar o Líder |\n"
+        f"| **Anúncio Benchmark** | [{dados_lider['titulo_lider']}]({dados_lider['link_lider']}) | Otimização Técnica A10 |\n"
         f"| **ASIN** | `{dados_lider['asin_lider']}` | Novo Listing Otimizado |\n"
-        f"| **Preço Praticado** | `{dados_lider['preco_lider']}` | Posicionamento Competitivo |\n"
-        "| **Pontos Fortes do Líder** | Posição orgânica topo de busca e histórico de vendas acumulado. | Foco em diferenciação técnica e clareza de atributos. |\n"
-        "| **Dores do Concorrente (Reviews Negativos)** | Reclamações comuns de borracha/vedação, tamanho real e durabilidade do acabamento. | Neutralização explícita nos primeiros Bullet Points e fotos técnicas. |\n\n"
+        f"| **Preço Estimado** | `{dados_lider['preco_lider']}` | Posicionamento Estratégico |\n"
+        "| **Pontos Fortes do Líder** | Alta autoridade de vendas acumuladas e posição orgânica consolidada. | Diferenciação de atributos, clareza de material e copy persuasiva. |\n"
+        "| **Dores Mapeadas nos Reviews do Líder** | Queixas de durabilidade, tamanho divergente ou vazamentos/desgaste rápido. | Neutralização explícita nas primeiras linhas dos Bullets e imagens técnicas. |\n\n"
         "---\n\n"
         "### 📊 Anúncio Otimizado para Amazon Brasil\n\n"
-        "**1. TÍTULOS OTIMIZADOS (LIMITE ESTRITO: 70 A 75 CARACTERES)**\n"
-        "- **Título A (Clareza + Atributos):** [Escreva o título A exatamente com 70 a 75 caracteres sem termos proibidos] *(Caracteres: XX)*\n"
-        "- **Título B (SEO + Especificações):** [Escreva o título B exatamente com 70 a 75 caracteres sem termos proibidos] *(Caracteres: XX)*\n\n"
-        "**2. DESCRIÇÃO COMPLETA DO PRODUTO (TÉCNICA AIDA)**\n"
-        f"[Texto fluido e completo de 1200 a 1800 caracteres em AIDA focando em {termo_exibicao}]\n\n"
-        "#### Versão HTML para o Seller Central:\n"
+        "**1. TÍTULOS OTIMIZADOS (LIMITE ESTRITO: 70 A 75 CARACTERES | SEM TERMOS PROIBIDOS)**\n"
+        "- **Título A (Clareza + Atributos Principais):** [Gere o título exatamente entre 70 e 75 caracteres, sem termos proibidos como 'Pronta Entrega', 'FBA', 'Melhor'] *(Contagem: XX caracteres)*\n"
+        "- **Título B (SEO + Especificações Técnicas):** [Gere o título exatamente entre 70 e 75 caracteres, sem termos proibidos] *(Contagem: XX caracteres)*\n\n"
+        "**2. DESCRIÇÃO COMPLETA DO PRODUTO (1.200 A 1.800 CARACTERES - TÉCNICA AIDA)**\n"
+        f"[Escreva uma descrição completa e rica em técnica AIDA (Atenção, Interesse, Desejo, Ação) para {termo_exibicao}, detalhando especificações e conteúdo da embalagem]\n\n"
+        "#### Versão HTML Otimizada para o Seller Central:\n"
         "```html\n"
-        "[Código HTML limpo com <p>, <b> e <br>]\n"
+        "[Gere o código HTML limpo utilizando estritamente as tags autorizadas <p>, <b> e <br>]\n"
         "```\n\n"
         "**3. 10 BULLET POINTS DE ALTA CONVERSÃO**\n"
-        "[Gere 10 Bullet Points detalhados no formato: Emoji + **TÍTULO EM CAIXA ALTA (2 A 4 PALAVRAS):** + explicação técnica/benefício real]\n\n"
-        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - ATÉ 230 BYTES)**\n"
-        "[Gere a lista de palavras-chave separadas por espaço sem acentos, sem vírgulas e SEM REPETIR NENHUMA PALAVRA que já consta nos Títulos A e B]\n\n"
-        "**5. PROMPTS PARA IMAGENS DA LISTAGEM (10 PROMPTS)**\n"
+        "[Gere exatamente 10 Bullet Points ricos. Formato obrigatório: Emoji + **TÍTULO EM CAIXA ALTA (2 A 4 PALAVRAS):** + explicação técnica e benefício real]\n\n"
+        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - ATÉ 230 BYTES MAXIMIZADOS)**\n"
+        "[Gere a lista maximalista de palavras-chave separadas por espaço, sem acentos, sem vírgulas, sem numerais e OBRIGATORIAMENTE SEM REPETIR NENHUMA PALAVRA que já consta nos Títulos A e B]\n\n"
+        "**5. PROMPTS PARA IMAGENS DA LISTAGEM (10 PROMPTS EM INGLÊS)**\n"
         "1. **Foto 01 (Principal - Fundo Branco):** using the attached base product image as an overlay without any modification to the product itself, isolated on seamless pure white background (RGB 255,255,255), product filling 85% of frame, crisp studio commercial lighting.\n"
         "2. **Foto 02 (Uso Real / Lifestyle):** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle background, natural commercial lighting.\n"
-        "3. **Foto 03 (Infográfico de Benefícios):** using the attached base product image as an overlay without any modification to the product itself, clean infographic layout in Portuguese.\n"
-        "4. **Foto 04 (Dimensões e Escala):** using the attached base product image as an overlay without any modification to the product itself, dimensional infographic with scale indicators.\n"
-        "5. **Foto 05 (Conteúdo da Embalagem):** using the attached base product image as an overlay without any modification to the product itself, overhead layflat view.\n"
-        "6. **Foto 06 (Close de Material):** using the attached base product image as an overlay without any modification to the product itself, macro shot focusing on material finish.\n"
-        "7. **Foto 07 (Funcionalidade):** using the attached base product image as an overlay without any modification to the product itself, demonstration showing ease of use.\n"
-        "8. **Foto 08 (Cenários Diversos):** using the attached base product image as an overlay without any modification to the product itself, home environment setup.\n"
-        "9. **Foto 09 (Comparativo):** using the attached base product image as an overlay without any modification to the product itself, side-by-side comparison.\n"
-        "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, trust badges in Portuguese.\n\n"
-        "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
-        f"[Roteiro comercial em 5 cenas para {termo_exibicao}]\n\n"
-        "**7. CONTEÚDO A+ & 8. PROMPTS A+ (6 BANNERS INGLÊS)**\n"
-        "[Estrutura de Conteúdo A+ e 6 Prompts de Imagens em inglês]"
+        "3. **Foto 03 (Infográfico de Benefícios):** using the attached base product image as an overlay without any modification to the product itself, clean infographic layout pointing out key technical features in Portuguese.\n"
+        "4. **Foto 04 (Dimensões e Escala):** using the attached base product image as an overlay without any modification to the product itself, dimensional infographic with clear height, width, and volume scale.\n"
+        "5. **Foto 05 (Conteúdo da Embalagem):** using the attached base product image as an overlay without any modification to the product itself, overhead layflat view showing product and included items.\n"
+        "6. **Foto 06 (Close de Material):** using the attached base product image as an overlay without any modification to the product itself, macro shot focusing on build quality and texture finish.\n"
+        "7. **Foto 07 (Funcionalidade e Uso):** using the attached base product image as an overlay without any modification to the product itself, practical demonstration showing ease of operation and cleaning.\n"
+        "8. **Foto 08 (Cenários Diversos):** using the attached base product image as an overlay without any modification to the product itself, home/kitchen environment setup.\n"
+        "9. **Foto 09 (Comparativo de Qualidade):** using the attached base product image as an overlay without any modification to the product itself, side-by-side comparison illustrating superior build.\n"
+        "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, trust badges and warranty details in Portuguese.\n\n"
+        "**6. ROTEIRO DE VÍDEO COMERCIAL (30–45s)**\n"
+        f"[Estruture o roteiro comercial completo em 5 Cenas com indicações de vídeo, áudio, legenda e tempo para {termo_exibicao}]\n\n"
+        "**7. CONTEÚDO A+ COMPLETO**\n"
+        "[Gere a estrutura textual de blocos e módulos para a página de Conteúdo A+ na Amazon BR]\n\n"
+        "**8. 6 PROMPTS PARA BANNERS A+ (EM INGLÊS)**\n"
+        "[Gere 6 prompts técnicos em inglês para geração dos banners retangulares de Conteúdo A+]"
     )
 
-    if api_key and len(str(api_key).strip()) > 10:
-        try:
-            client = Anthropic(api_key=str(api_key).strip())
-            for model_name in [
-                "claude-3-5-sonnet-latest",
-                "claude-3-5-sonnet-20241022",
-                "claude-3-haiku-20240307",
-            ]:
-                try:
-                    res = client.messages.create(
-                        model=model_name,
-                        max_tokens=3800,
-                        messages=[{"role": "user", "content": prompt_mestre}],
-                    )
-                    return links_md + res.content[0].text
-                except Exception:
-                    continue
-        except Exception:
-            pass
+    erros_detalhados = []
+    try:
+        client = Anthropic(api_key=api_key.strip())
+        for model_name in [
+            "claude-3-5-sonnet-latest",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-haiku-20240307",
+        ]:
+            try:
+                res = client.messages.create(
+                    model=model_name,
+                    max_tokens=3800,
+                    messages=[{"role": "user", "content": prompt_mestre}],
+                )
+                return links_md + res.content[0].text
+            except Exception as err_model:
+                erros_detalhados.append(f"`{model_name}`: {str(err_model)}")
+    except Exception as err_init:
+        return f"{links_md}⚠️ **Erro ao inicializar SDK Anthropic:** {str(err_init)}"
 
-    return links_md + "Erro de comunicação com a API Anthropic. Verifique os Secrets do Streamlit."
+    return f"{links_md}⚠️ **Falha na chamada dos modelos Anthropic:**\n- " + "\n- ".join(erros_detalhados)
 
 
 def render_module_1():
-    st.subheader("📦 Módulo 1: Análise e Otimização de Listing")
+    st.subheader("📦 Módulo 1: Análise e Otimização de Listing A10")
 
     metodo_pesquisa = st.radio(
         "Como deseja buscar o produto?",
@@ -317,6 +323,6 @@ def render_module_1():
         if not termo_final:
             st.warning("Por favor, digite um produto ou faça o upload de uma imagem válida.")
         else:
-            with st.spinner(f"Analisando melhor vendedor orgânico e gerando anúncio completo para '{termo_final}'..."):
+            with st.spinner(f"Analisando melhor vendedor orgânico e gerando anúncio A10 completo para '{termo_final}'..."):
                 resultado = processar_e_gerar_markdown(termo_final)
                 st.markdown(resultado)
