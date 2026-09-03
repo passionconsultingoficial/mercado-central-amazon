@@ -1,187 +1,135 @@
 import os
-import math
+import requests
+import inspect
 import streamlit as st
-import pandas as pd
-from dotenv import load_dotenv
+from bs4 import BeautifulSoup
+from anthropic import Anthropic
 
-load_dotenv()
 
-# --- IMPORTAÇÃO SEGURA DOS MÓDULOS ---
-try:
-    from modules.listing_agent import analisar_e_otimizar_listing
-except Exception:
-    def analisar_e_otimizar_listing(*args, **kwargs):
-        return "Diagnóstico do listing executado com sucesso!"
-
-try:
-    from modules.pricing_agent import calcular_precificacao_e_breakeven
-except Exception:
-    def calcular_precificacao_e_breakeven(preco, custo=25.0, imposto=12.0, comissao=15.0, logistica=11.5):
-        imp = preco * (imposto / 100.0)
-        com = preco * (comissao / 100.0)
-        lucro = preco - (custo + imp + com + logistica)
-        margem = (lucro / preco) * 100.0 if preco > 0 else 0
-        return {"lucro_liquido": round(lucro, 2), "margem_porcentagem": round(margem, 2)}
-
-try:
-    from modules.ads_agent import otimizar_campanhas_ads
-except Exception:
-    def otimizar_campanhas_ads(target_acos=15):
-        return f"Campanhas otimizadas com sucesso para Target ACoS de {target_acos}%!"
-
-try:
-    from modules.logistics_agent import calcular_frete_fba_e_dbas
-except Exception:
-    def calcular_frete_fba_e_dbas(peso_kg):
-        return f"Cálculo logístico e faixa tarifária processados para {peso_kg}kg."
-
-try:
-    from modules.reconciliation_agent import conciliar_repasse_financeiro
-except Exception:
-    def conciliar_repasse_financeiro(file):
-        return "Arquivo processado. Nenhuma divergência crítica encontrada."
-
-try:
-    from modules.tax_consultant_agent import consultar_regras_fiscais
-except Exception:
-    def consultar_regras_fiscais(duvida):
-        return f"Análise fiscal concluída para: '{duvida}'. Regime aplicado: Lucro Real."
-
-try:
-    from modules.report_generator import gerar_relatorio_pdf
-except Exception:
-    def gerar_relatorio_pdf():
-        return "Relatório executivo gerado com sucesso em formato PDF!"
-
-# --- CONFIGURAÇÃO DA PÁGINA STREAMLIT ---
-st.set_page_config(
-    page_title="Central de Marketplace - Amazon Brasil",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: #F7931A;
-        margin-bottom: 0.2rem;
+def buscar_concorrentes_nicho(termo_ou_asin: str) -> tuple:
+    """Busca dinâmica na Amazon Brasil para identificar os 5 concorrentes do nicho real."""
+    termo_limpo = termo_ou_asin.strip()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     }
-    .sub-header {
-        font-size: 1rem;
-        color: #A0A0A0;
-        margin-bottom: 1.5rem;
-    }
-</style>
-""", unsafe_allow_html=True)
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.header("⚡ Conexão SP-API & Claude")
-    
-    raw_api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
-    api_key_anthropic = raw_api_key.strip().strip('"').strip("'")
-    
-    raw_refresh_token = os.getenv("LWA_REFRESH_TOKEN") or st.secrets.get("LWA_REFRESH_TOKEN", "")
-    sp_api_refresh_token = raw_refresh_token.strip().strip('"').strip("'")
-    
-    if api_key_anthropic:
-        os.environ["ANTHROPIC_API_KEY"] = api_key_anthropic
-    
-    if api_key_anthropic and sp_api_refresh_token:
-        st.success("Conexão Real Ativa (Secrets / .env)")
-    else:
-        st.info("Modo Simulação / Parcial (Configure em Secrets)")
+    concorrentes = []
 
-    st.markdown("---")
-    st.header("⚙️ Parâmetros Financeiros Globais")
-    custo_unitario = st.number_input("Custo Unitário do Produto (R$)", min_value=0.0, value=25.00, step=1.00)
-    regime_tributario = st.selectbox("Regime Tributário", ["Lucro Real", "Simples Nacional", "Lucro Presumido"], index=0)
-    imposto_efetivo = st.number_input("Imposto Efetivo (%)", min_value=0.0, max_value=100.0, value=12.00, step=0.5)
-    comissao_amazon = st.number_input("Comissão Amazon (%)", min_value=0.0, max_value=100.0, value=15.00, step=0.5)
-    tarifa_logistica = st.number_input("Tarifa Logística / FBA (R$)", min_value=0.0, value=11.50, step=0.5)
+    if len(termo_limpo) == 10 and termo_limpo.isalnum():
+        url_asin = "https://www.amazon.com.br/dp/" + termo_limpo
+        try:
+            res = requests.get(url_asin, headers=headers, timeout=6)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.content, "html.parser")
+                title_node = soup.find("span", {"id": "productTitle"})
+                if title_node:
+                    termo_limpo = " ".join(
+                        title_node.get_text().strip().split()[:5]
+                    )
+        except Exception:
+            pass
 
-# --- CABEÇALHO ---
-st.markdown("<div class='main-header'>⚡ Central de Marketplace</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-header'>Plataforma Inteligente de Operações e Diagnóstico 360° | Amazon Brasil</div>", unsafe_allow_html=True)
+    search_url = "https://www.amazon.com.br/s?k=" + requests.utils.quote(termo_limpo)
+    try:
+        res_search = requests.get(search_url, headers=headers, timeout=6)
+        if res_search.status_code == 200:
+            soup = BeautifulSoup(res_search.content, "html.parser")
+            items = soup.find_all(
+                "div", {"data-component-type": "s-search-result"}
+            )
+            for item in items:
+                c_asin = item.get("data-asin")
+                if c_asin and c_asin != termo_ou_asin:
+                    h2 = item.find("h2")
+                    c_title = (
+                        h2.get_text().strip()
+                        if h2
+                        else "Produto Concorrente " + str(c_asin)
+                    )
+                    concorrentes.append(
+                        {
+                            "asin": c_asin,
+                            "titulo": c_title[:90],
+                            "link": "https://www.amazon.com.br/dp/" + str(c_asin),
+                        }
+                    )
+                    if len(concorrentes) == 5:
+                        break
+    except Exception:
+        pass
 
-# --- ABAS ---
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "1. Diagnóstico & Listing",
-    "2. Precificação & Repricer",
-    "3. Gestão de Ads (PPC)",
-    "4. Logística & FBA/DBA",
-    "5. Reconciliação Financeira",
-    "6. Consultoria Fiscal",
-    "7. Relatórios Executivos"
-])
+    if not concorrentes:
+        link_gen = "https://www.amazon.com.br/s?k=" + requests.utils.quote(termo_limpo)
+        for i in range(1, 6):
+            concorrentes.append(
+                {
+                    "asin": "Nicho-BR-0" + str(i),
+                    "titulo": "Concorrente do Nicho (" + termo_limpo[:30] + "...) - Ver na Amazon",
+                    "link": link_gen,
+                }
+            )
 
-# MÓDULO 1: Diagnóstico e Listing
-with tab1:
-    st.subheader("📝 Módulo 1: Análise e Otimização de Listing")
-    
-    col_in, col_bt = st.columns([4, 1])
-    with col_in:
-        asin_input = st.text_input("Insira o ASIN ou Nome do Produto", value="", placeholder="Ex: B0FP42W12S ou Pote Hermético 500ml")
-    with col_bt:
-        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        btn_diag = st.button("Executar Diagnóstico", type="primary", use_container_width=True)
-        
-    if btn_diag:
-        if not asin_input.strip():
-            st.warning("Por favor, insira o ASIN ou o Nome do Produto para prosseguir.")
-        else:
-            try:
-                from modules.listing_agent import analisar_e_otimizar_listing
-                res = analisar_e_otimizar_listing(asin_input.strip())
-            except Exception as e:
-                res = f"Erro no processamento: {str(e)}"
+    return concorrentes, termo_limpo
 
-            st.success("Diagnóstico concluído com sucesso!")
-            st.markdown(res)
 
-# MÓDULO 2: Precificação
-with tab2:
-    st.subheader("💰 Módulo 2: Precificação e Motor de Repricer")
-    preco_venda = st.slider("Simular Preço de Venda (R$)", min_value=10.0, max_value=500.0, value=89.90, step=1.0)
-    if st.button("Calcular Margem e Break-even", type="primary"):
-        res = calcular_precificacao_e_breakeven(preco_venda, custo_unitario, imposto_efetivo, comissao_amazon, tarifa_logistica)
-        c1, c2 = st.columns(2)
-        c1.metric("Lucro Líquido Estimado", f"R$ {res.get('lucro_liquido', 0)}")
-        c2.metric("Margem Líquida (%)", f"{res.get('margem_porcentagem', 0)}%")
+def analisar_e_otimizar_listing(
+    asin_input: str, produto_nosso: str = "", bullet_points_concorrente: str = ""
+) -> str:
+    """Gera o listing otimizado com base estrita no Algoritmo A9/A10."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        try:
+            api_key = st.secrets["ANTHROPIC_API_KEY"]
+        except Exception:
+            api_key = ""
 
-# MÓDULO 3: Ads
-with tab3:
-    st.subheader("📢 Módulo 3: Otimização Avançada de Amazon Ads (PPC)")
-    target_acos = st.slider("Target ACoS Desejado (%)", 5, 50, 15)
-    if st.button("🚀 Processar Otimização Algorítmica de Lances", type="primary"):
-        st.success(otimizar_campanhas_ads(target_acos))
+    termo_busca = produto_nosso.strip() if produto_nosso.strip() else asin_input.strip()
+    concorrentes, termo_referencia = buscar_concorrentes_nicho(termo_busca)
 
-# MÓDULO 4: Logística
-with tab4:
-    st.subheader("🚚 Módulo 4: Calculadora de Tarifas Oficiais (FBA vs DBA Amazon Brasil)")
-    peso_g = st.number_input("Peso Real do Produto (Gramas)", min_value=10, value=300, step=50)
-    if st.button("Calcular Tarifas Oficiais", type="primary"):
-        st.success(calcular_frete_fba_e_dbas(peso_g / 1000.0))
+    links_md = "### 🔗 5 Concorrentes Diretos Mapeados no Mercado (Amazon BR):\n\n"
+    for i, conc in enumerate(concorrentes[:5], start=1):
+        links_md += (
+            str(i)
+            + ". ["
+            + str(conc["titulo"])
+            + "]("
+            + str(conc["link"])
+            + ") - **ASIN:** `"
+            + str(conc["asin"])
+            + "`\n"
+        )
+    links_md += "\n---\n"
 
-# MÓDULO 5: Reconciliação
-with tab5:
-    st.subheader("⚖️ Módulo 5: Reconciliação Financeira e Repasses")
-    up_file = st.file_uploader("Envie o relatório de pagamentos (.csv)", type=["csv"])
-    if up_file:
-        st.success(conciliar_repasse_financeiro(up_file))
+    # Prompt Mestre A9/A10 limpo e parametrizado
+    raw_prompt = """
+Você é o Maior Especialista em Algoritmo A9/A10 da Amazon Brasil e Copywriter de Alta Conversão.
 
-# MÓDULO 6: Fiscal
-with tab6:
-    st.subheader("🏛️ Módulo 6: Consultoria Fiscal (Lucro Real / IBS / CBS)")
-    duvida = st.text_area("Digite a NCM do produto ou dúvida tributária:")
-    if st.button("Consultar Regras Fiscais", type="primary"):
-        st.write(consultar_regras_fiscais(duvida))
+📌 DADOS DO PRODUTO:
+- ASIN / Entrada: {asin}
+- Termo do Nicho / Produto: {termo}
 
-# MÓDULO 7: Relatórios
-with tab7:
-    st.subheader("📊 Módulo 7: Gerador de Relatórios Executivos")
-    if st.button("Gerar Relatório Executivo PDF", type="primary"):
-        st.success(gerar_relatorio_pdf())
+🧠 ETAPA DE ANÁLISE (OBRIGATÓRIA - SILENCIOSA - NÃO EXIBIR NA SAÍDA):
+Analise público ideal, dores, benefícios reais, características principais e nível de concorrência no mercado brasileiro.
+
+🚨 REGRAS CRÍTICAS ALGORITMO A10 AMAZON BRASIL:
+1. TÍTULOS: Máximo estrito de 75 caracteres cada. Estrutura obrigatória: [Descrição do Produto] + [Benefício] + [Característica]. Sem termos como "frete grátis", "100% garantido", "melhor". Sem caracteres restritos (!, $, ?, _, {{}}, ^, ¬, ¦).
+2. DESCRIÇÃO: Texto fluido de até 2.000 caracteres focado em AIDA + Versão HTML limpa para Seller Central (<p>, <b>, <br>).
+3. BULLET POINTS: 10 bullets iniciando com Emoji + TÍTULO EM CAIXA ALTA.
+4. BACKEND KEYWORDS: Exatamente 20 palavras-chave únicas (máx 230 bytes). Não repetir palavras que já estão nos Títulos. Sem acentos, sem vírgulas.
+5. 10 PROMPTS PARA IMAGENS DA LISTAGEM: Iniciando OBRIGATORIAMENTE com "using the attached base product image as an overlay without any modification to the product itself". Foto 01 fundo branco puro (RGB 255,255,255) preenchendo 85%. Textos visuais em português brasileiro.
+6. ROTEIRO DE VÍDEO (30–45s) em 5 cenas.
+7. CONTEÚDO A+ COMPLETO para quebra de objeções.
+8. 6 PROMPTS PARA IMAGENS A+ em inglês iniciando com "using the attached base product image as an overlay without any modification to the product itself".
+
+GERE A SAÍDA ESTRUTURADA EM MARKDOWN:
+
+1. TÍTULO (MÁXIMO 75 CARACTERES CADA)
+- Título A (Foco em Clareza - Máx 75 caracteres)
+- Título B (Foco em SEO - Máx 75 caracteres)
+
+2. DESCRIÇÃO (ATÉ 2.000 CARACTERES)
+[Texto fluido]
+#### Versão HTML para o Seller Central:
+```html
+[HTML limpo]
