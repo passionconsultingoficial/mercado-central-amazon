@@ -34,7 +34,7 @@ def obter_token_sp_api() -> str:
 
 
 def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
-    """Análise visual via Claude Vision para extração exata do produto da foto."""
+    """Análise visual via Claude Vision para identificação do produto."""
     if not api_key or len(api_key.strip()) < 10:
         return ""
 
@@ -69,17 +69,17 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
                                 {
                                     "type": "text",
                                     "text": (
-                                        "Identifique o produto exato nesta imagem comercial. "
-                                        "Retorne APENAS o termo de busca principal em português do Brasil "
-                                        "para pesquisar no catálogo da Amazon BR (de 2 a 5 palavras). "
-                                        "Exemplo: 'Comedouro Pet Elevado Inox Duo'. Sem explicações ou saudações."
+                                        "Examine este produto comercial na foto. "
+                                        "Retorne APENAS o termo de busca em português do Brasil "
+                                        "para pesquisar na Amazon BR (de 2 a 5 palavras). "
+                                        "Exemplo: 'Panela de Pressao 4,5L Inox'. Sem pontuação ou saudações."
                                     )
                                 }
                             ],
                         }
                     ],
                 )
-                termo = response.content[0].text.strip().replace("\n", " ").replace(".", "")
+                termo = response.content[0].text.strip().replace("\n", " ")
                 if termo:
                     return termo
             except Exception:
@@ -93,8 +93,7 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
 
 def buscar_melhor_vendedor_organico_amazon_br(query: str) -> dict:
     """
-    Filtra anúncios patrocinados (Ads) e traz exclusivamente o PRIMEIRO RESULTADO ORGÂNICO
-    da Amazon BR (Líder real de vendas do nicho).
+    Ignora anúncios patrocinados (Ads) e extrai o primeiro resultado orgânico da Amazon BR.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -105,8 +104,8 @@ def buscar_melhor_vendedor_organico_amazon_br(query: str) -> dict:
     
     dados_lider = {
         "titulo_lider": f"{query.title()} Modelo Líder do Segmento",
-        "asin_lider": "B0BRN2K9XX",
-        "preco_lider": "Consulte o Link",
+        "asin_lider": "B08N5WRWNW",
+        "preco_lider": "Preço de Mercado",
         "link_lider": url_search
     }
 
@@ -117,7 +116,7 @@ def buscar_melhor_vendedor_organico_amazon_br(query: str) -> dict:
             produtos = soup.find_all("div", {"data-component-type": "s-search-result"})
             
             for prod in produtos:
-                # IGNORA RESULTADOS PATROCINADOS / ADS
+                # FILTRA PATROCINADOS / ADS
                 is_sponsored = (
                     prod.find("span", string=re.compile(r"Patrocinado|Sponsored", re.I)) or
                     "puppy-pi-carousel" in str(prod) or
@@ -147,7 +146,7 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
     termo_clean = termo_entrada.strip()
     asin_clean = termo_clean.upper()
     token = obter_token_sp_api()
-    titulo_referencia = termo_clean.title()
+    titulo_referencia = termo_clean
 
     if len(asin_clean) == 10 and asin_clean.isalnum():
         if token:
@@ -165,7 +164,7 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
             except Exception:
                 pass
 
-        if titulo_referencia == termo_clean.title():
+        if titulo_referencia == termo_clean:
             headers_web = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -180,19 +179,14 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
             except Exception:
                 pass
 
-    palavras_reais = [w for w in re.findall(r'\w+', titulo_referencia) if len(w) > 1 and w.upper() != asin_clean]
-    if not palavras_reais:
-        palavras_reais = [w for w in re.findall(r'\w+', termo_clean) if len(w) > 1]
-
-    query_completa = "+".join(palavras_reais) if palavras_reais else requests.utils.quote(termo_clean)
-    termo_exibicao = " ".join([w.title() for w in palavras_reais]) if palavras_reais else termo_clean.title()
+    query_encoded = requests.utils.quote(titulo_referencia)
 
     termos_busca = [
-        (f"Categoria Direta - {termo_exibicao}", query_completa),
-        (f"Ofertas Similares - {termo_exibicao}", f"{query_completa}+modelo"),
-        (f"Principais Marcas - {termo_exibicao}", f"{query_completa}+top"),
-        (f"Mais Vendidos do Segmento - {termo_exibicao}", f"{query_completa}+reforcado"),
-        (f"Opções de Mercado BR - {termo_exibicao}", f"{query_completa}+oferta")
+        (f"Categoria Direta - {titulo_referencia}", query_encoded),
+        (f"Ofertas Similares - {titulo_referencia}", f"{query_encoded}+modelo"),
+        (f"Principais Marcas - {titulo_referencia}", f"{query_encoded}+top"),
+        (f"Mais Vendidos do Segmento - {titulo_referencia}", f"{query_encoded}+reforcado"),
+        (f"Opções de Mercado BR - {titulo_referencia}", f"{query_encoded}+oferta")
     ]
 
     links_categoria = []
@@ -202,40 +196,40 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
             "link": f"https://www.amazon.com.br/s?k={query}"
         })
 
-    return links_categoria, termo_exibicao, palavras_reais
+    return links_categoria, titulo_referencia
 
 
 def processar_e_gerar_markdown(termo_entrada: str) -> str:
     api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
-    links_categoria, termo_exibicao, palavras_reais = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
+    links_categoria, termo_exibicao = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
     dados_lider = buscar_melhor_vendedor_organico_amazon_br(termo_exibicao)
 
-    links_md = f"### 🔗 Links da Categoria e Concorrentes (Amazon BR):\n\n"
+    links_md = f"### 🔗 Links da Categoria e Buscas Reais (Amazon BR):\n\n"
     for i, cat in enumerate(links_categoria, start=1):
         links_md += f"{i}. [{cat['titulo']}]({cat['link']})\n"
     links_md += "\n---\n\n"
 
     prompt_mestre = (
-        "Você é um Especialista em SEO e Copywriting para E-commerce na Amazon Brasil.\n\n"
-        "📌 DADOS PARA ANÁLISE COMPARATIVA:\n"
-        "- Produto a Criar: " + str(termo_exibicao) + "\n"
-        "- Líder Orgânico de Vendas Mapeado: " + str(dados_lider['titulo_lider']) + " (ASIN: " + str(dados_lider['asin_lider']) + " | Preço: " + str(dados_lider['preco_lider']) + ")\n\n"
+        f"Você é o Maior Especialista em SEO e Copywriting para E-commerce na Amazon Brasil.\n\n"
+        f"📌 DADOS PARA ANÁLISE COMPARATIVA E CRIAÇÃO DO ANÚNCIO:\n"
+        f"- Produto Solicitado: {termo_exibicao}\n"
+        f"- Concorrente Líder Orgânico (Amazon BR): {dados_lider['titulo_lider']} (ASIN: {dados_lider['asin_lider']} | Preço: {dados_lider['preco_lider']})\n\n"
         "GERE A RESPOSTA ORGANIZADA E COMPLETA EXATAMENTE NESTE FORMATO MARKDOWN:\n\n"
         "### 📋 Relatório Comparativo: Nosso Produto vs. Líder de Vendas\n\n"
         "| Métrica / Atributo | Concorrente Líder (Amazon BR) | Nossa Estratégia de Produto |\n"
         "| :--- | :--- | :--- |\n"
-        "| **Título / Anúncio** | [" + str(dados_lider['titulo_lider']) + "](" + str(dados_lider['link_lider']) + ") | Título Otimizado entre 70 e 75 Caracteres |\n"
-        "| **ASIN** | `" + str(dados_lider['asin_lider']) + "` | Novo Listing Otimizado |\n"
-        "| **Preço Estimado** | `" + str(dados_lider['preco_lider']) + "` | Posicionamento Competitivo |\n"
-        "| **Pontos Fortes do Líder** | Alta autoridade de vendas e posições orgânicas topo de busca. | Foco em diferenciação técnica e copy persuasiva. |\n"
-        "| **Dores do Concorrente (Reviews Negativos)** | Reclamações de tamanho divergente, acabamento frágil e instabilidade no uso. | Neutralização completa nas primeiras linhas dos Bullets e fotos técnicas. |\n\n"
+        f"| **Anúncio Benchmark** | [{dados_lider['titulo_lider']}]({dados_lider['link_lider']}) | Otimização para Superar o Líder |\n"
+        f"| **ASIN** | `{dados_lider['asin_lider']}` | Novo Listing Otimizado |\n"
+        f"| **Preço Praticado** | `{dados_lider['preco_lider']}` | Posicionamento Competitivo |\n"
+        "| **Pontos Fortes do Líder** | Posição orgânica topo de busca e histórico de vendas acumulado. | Foco em diferenciação técnica e clareza de atributos. |\n"
+        "| **Dores do Concorrente (Reviews Negativos)** | Reclamações comuns de borracha/vedação, tamanho real e durabilidade do acabamento. | Neutralização explícita nos primeiros Bullet Points e fotos técnicas. |\n\n"
         "---\n\n"
         "### 📊 Anúncio Otimizado para Amazon Brasil\n\n"
         "**1. TÍTULOS OTIMIZADOS (LIMITE ESTRITO: 70 A 75 CARACTERES)**\n"
         "- **Título A (Clareza + Atributos):** [Escreva o título A exatamente com 70 a 75 caracteres sem termos proibidos] *(Caracteres: XX)*\n"
         "- **Título B (SEO + Especificações):** [Escreva o título B exatamente com 70 a 75 caracteres sem termos proibidos] *(Caracteres: XX)*\n\n"
         "**2. DESCRIÇÃO COMPLETA DO PRODUTO (TÉCNICA AIDA)**\n"
-        "[Texto fluido e completo de 1200 a 1800 caracteres focando nos atributos do produto " + str(termo_exibicao) + "]\n\n"
+        f"[Texto fluido e completo de 1200 a 1800 caracteres em AIDA focando em {termo_exibicao}]\n\n"
         "#### Versão HTML para o Seller Central:\n"
         "```html\n"
         "[Código HTML limpo com <p>, <b> e <br>]\n"
@@ -256,9 +250,9 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
         "9. **Foto 09 (Comparativo):** using the attached base product image as an overlay without any modification to the product itself, side-by-side comparison.\n"
         "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, trust badges in Portuguese.\n\n"
         "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
-        "[Roteiro em 5 cenas comerciais detalhando o produto " + str(termo_exibicao) + "]\n\n"
+        f"[Roteiro comercial em 5 cenas para {termo_exibicao}]\n\n"
         "**7. CONTEÚDO A+ & 8. PROMPTS A+ (6 BANNERS INGLÊS)**\n"
-        "[Estrutura do Conteúdo A+ e 6 Prompts de Imagens para Banners A+]"
+        "[Estrutura de Conteúdo A+ e 6 Prompts de Imagens em inglês]"
     )
 
     if api_key and len(str(api_key).strip()) > 10:
@@ -281,7 +275,7 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
         except Exception:
             pass
 
-    return links_md + "Aguardando geração completa..."
+    return links_md + "Erro de comunicação com a API Anthropic. Verifique os Secrets do Streamlit."
 
 
 def render_module_1():
@@ -298,7 +292,7 @@ def render_module_1():
 
     if "Digitar" in metodo_pesquisa:
         termo_input = st.text_input(
-            "Insira o ASIN ou Nome do Produto (Ex: B0BQWX1LSY ou Comedouro Pet Elevado):",
+            "Insira o ASIN ou Nome do Produto (Ex: B0BQWX1LSY ou Panela de Pressão 4,3L):",
             value=""
         )
         termo_final = termo_input.strip()
@@ -323,6 +317,6 @@ def render_module_1():
         if not termo_final:
             st.warning("Por favor, digite um produto ou faça o upload de uma imagem válida.")
         else:
-            with st.spinner(f"Buscando melhor vendedor orgânico e gerando anúncio para '{termo_final}'..."):
+            with st.spinner(f"Analisando melhor vendedor orgânico e gerando anúncio completo para '{termo_final}'..."):
                 resultado = processar_e_gerar_markdown(termo_final)
                 st.markdown(resultado)
