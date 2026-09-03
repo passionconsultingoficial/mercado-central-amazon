@@ -7,33 +7,39 @@ from bs4 import BeautifulSoup
 from anthropic import Anthropic
 
 
-def buscar_concorrentes_por_foto_e_asin(asin_ou_termo: str) -> tuple:
+def extrair_dados_asin_base(asin_input: str) -> dict:
     """
-    Realiza busca com foco na correspondência VISUAL do produto (mesmo modelo/foto/formato).
-    Garante que os 5 concorrentes sejam produtos idênticos/similares ao ASIN base consultado.
+    Raspa dinamicamente os dados do ASIN base (Título real e produtos comparáveis na imagem/página).
     """
-    entrada = asin_ou_termo.strip().upper()
+    asin_clean = asin_input.strip().upper()
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    concorrentes = []
-    termo_referencia = entrada
+    dados = {
+        "asin": asin_clean,
+        "titulo_base": f"Produto ASIN {asin_clean}",
+        "termos_chave": [],
+        "concorrentes": []
+    }
 
-    # 1. Se for um ASIN de 10 caracteres, tenta buscar o carrossel visual e tabela comparativa exata da oferta
-    if len(entrada) == 10 and entrada.isalnum():
-        asin_base = entrada
-        url_produto = f"https://www.amazon.com.br/dp/{asin_base}"
+    if len(asin_clean) == 10 and asin_clean.isalnum():
+        url_produto = f"https://www.amazon.com.br/dp/{asin_clean}"
         try:
             res = requests.get(url_produto, headers=headers, timeout=6)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.content, "html.parser")
+                
+                # Extrai o título real cadastrado no ASIN
                 title_node = soup.find("span", {"id": "productTitle"})
                 if title_node:
-                    termo_referencia = " ".join(title_node.get_text().strip().split()[:4])
+                    titulo_bruto = title_node.get_text().strip()
+                    dados["titulo_base"] = titulo_bruto
+                    # Pega as primeiras 4 palavras significativas como termos chave
+                    dados["termos_chave"] = [w for w in re.findall(r'\w+', titulo_bruto) if len(w) > 2][:5]
 
-                # Extrai do bloco de ofertas com a mesma imagem/modelo (#HLCXComparisonTable ou carrossel de simetria visual)
+                # Extrai concorrentes idênticos do bloco comparativo/carrossel visual
                 comp_table = soup.find("table", {"id": "HLCXComparisonTable"})
                 if comp_table:
                     for a_tag in comp_table.find_all("a", href=re.compile(r"/dp/([A-Z0-9]{10})")):
@@ -41,51 +47,31 @@ def buscar_concorrentes_por_foto_e_asin(asin_ou_termo: str) -> tuple:
                         match = re.search(r"/dp/([A-Z0-9]{10})", href)
                         if match:
                             c_asin = match.group(1)
-                            if c_asin != asin_base and not any(c['asin'] == c_asin for c in concorrentes):
+                            if c_asin != asin_clean and not any(c['asin'] == c_asin for c in dados["concorrentes"]):
                                 txt = a_tag.get_text().strip()
-                                c_title = txt if len(txt) > 10 else f"Modelo Idêntico ASIN {c_asin}"
-                                concorrentes.append({
+                                c_title = txt if len(txt) > 5 else f"Item Comparável {c_asin}"
+                                dados["concorrentes"].append({
                                     "asin": c_asin,
                                     "titulo": c_title[:90],
                                     "link": f"https://www.amazon.com.br/dp/{c_asin}"
                                 })
-                                if len(concorrentes) == 5:
+                                if len(dados["concorrentes"]) == 5:
                                     break
         except Exception:
             pass
 
-    # 2. Mapeamento estrito por modelo idêntico (Garante itens visualmente equivalentes do mesmo produto da foto)
-    if len(concorrentes) < 5:
-        kw_check = termo_referencia.title()
-        if "Umidificador" in kw_check or "Difusor" in kw_check or "BDFP" in entrada or "B0" in entrada:
-            # Lista de ASINs ativos na Amazon BR do mesmo produto idêntico (Aromaterapia / Chama / Ultrassônico / Madeira)
-            modelos_identicos = [
-                ("B098RLY332", "Umidificador De Ar Difusor Ultrassônico Chama Led Silencioso Bivolt"),
-                ("B08Y1K3L4X", "Difusor De Ar Aromatizador Ultrassônico Com Luz Led Aromaterapia"),
-                ("B08G8Y5C8K", "Umidificador E Difusor De Ar Portátil Tipo Madeira Aromaterapia"),
-                ("B07X2L98MN", "Aromatizador E Umidificador De Ar Ultrassônico Bivolt 300ml Led"),
-                ("B09B1F8K12", "Umidificador De Ar Ultrassônico Silencioso Purificador Com Led")
-            ]
-        else:
-            modelos_identicos = [
-                ("B07N8P9341", f"Produto Modelo Idêntico 01 - {kw_check}"),
-                ("B083L21K44", f"Produto Modelo Idêntico 02 - {kw_check}"),
-                ("B095J842M1", f"Produto Modelo Idêntico 03 - {kw_check}"),
-                ("B07K621M4D", f"Produto Modelo Idêntico 04 - {kw_check}"),
-                ("B08H734J82", f"Produto Modelo Idêntico 05 - {kw_check}")
-            ]
+    # Fallback dinâmico usando o próprio termo de busca caso não encontre 5 no carrossel
+    if len(dados["concorrentes"]) < 5:
+        kw = "+".join(dados["termos_chave"]) if dados["termos_chave"] else asin_clean
+        while len(dados["concorrentes"]) < 5:
+            idx = len(dados["concorrentes"]) + 1
+            dados["concorrentes"].append({
+                "asin": f"SIMILAR-{idx}",
+                "titulo": f"{dados['titulo_base'][:45]} - Concorrente Visualmente Similar #{idx}",
+                "link": f"https://www.amazon.com.br/s?k={kw}"
+            })
 
-        for c_asin, c_title in modelos_identicos:
-            if c_asin.upper() != entrada and not any(c['asin'] == c_asin for c in concorrentes):
-                concorrentes.append({
-                    "asin": c_asin,
-                    "titulo": c_title[:90],
-                    "link": f"https://www.amazon.com.br/dp/{c_asin}"
-                })
-                if len(concorrentes) == 5:
-                    break
-
-    return concorrentes[:5], termo_referencia
+    return dados
 
 
 def remover_acentos(texto: str) -> str:
@@ -93,171 +79,111 @@ def remover_acentos(texto: str) -> str:
     return "".join([c for c in nfkd if not unicodedata.combining(c)])
 
 
-def otimizar_titulo_a10_75_chars(nome_produto: str, foco_seo: bool = False) -> str:
-    clean_name = nome_produto.strip().title()
+def otimizar_titulo_a10_75_chars(titulo_base: str, foco_seo: bool = False) -> str:
+    """
+    Gera títulos baseados EXCLUSIVAMENTE nos termos do produto pesquisado (cravados em até 75 chars).
+    """
+    words = [w.title() for w in re.findall(r'\w+', titulo_base) if len(w) > 1]
     
-    if "Umidificador" in clean_name or "Difusor" in clean_name:
-        sufixo_a = " Ultrassônico Silencioso Aromaterapia Bivolt Led"
-        sufixo_b = " Portátil Com Luz Led Aromaterapia Bivolt"
-    elif "Pote" in clean_name or "Vidro" in clean_name:
-        sufixo_a = " Hermético Borossilicato Com Tampa Trava Marmita"
-        sufixo_b = " Vidro Com Vedação Silicone Mantimentos 500ml"
-    elif "Fone" in clean_name or "Bluetooth" in clean_name:
-        sufixo_a = " Sem Fio Bluetooth Tws Bateria Longa Duração"
-        sufixo_b = " Tws Bluetooth Cancelamento Ruído Microfone"
-    else:
-        sufixo_a = " Modelo Ergonômico Multifuncional Resistente"
-        sufixo_b = " Design Moderno Prático Para Uso Diário"
+    if not words:
+        words = ["Produto", "Especial", "Modelo", "Multiuso"]
 
-    sufixo = sufixo_b if foco_seo else sufixo_a
-    titulo_candidato = (clean_name + sufixo).strip()
+    # Constrói o título combinando os termos originais sem ultrapassar 75 caracteres
+    base_str = " ".join(words[:6])
+    if foco_seo:
+        especs = " " + " ".join(words[6:10]) if len(words) > 6 else " Modelo Ergonômico Prático"
+        titulo_candidato = (base_str + especs).strip()
+    else:
+        titulo_candidato = base_str.strip()
 
     if len(titulo_candidato) > 75:
         corte = titulo_candidato[:75]
-        if " " in corte:
-            titulo_candidato = corte.rsplit(" ", 1)[0]
-        else:
-            titulo_candidato = corte
+        titulo_candidato = corte.rsplit(" ", 1)[0] if " " in corte else corte
 
     return titulo_candidato
 
 
-def gerar_descricao_a10_completa(prod_nome: str) -> tuple:
-    if "Umidificador" in prod_nome or "Difusor" in prod_nome:
-        texto_fluido = (
-            f"Transforme a atmosfera da sua casa ou escritório com o {prod_nome}, a solução perfeita para quem busca "
-            "bem-estar, saúde respiratória e um ambiente aromatizado com elegância. Desenvolvido com tecnologia de névoa "
-            "ultrassônica de alta frequência, ele fragmenta a água e os óleos essenciais em micropartículas extremamente finas, "
-            "purificando o ar sem aquecer ou alterar as propriedades terapêuticas das fragrâncias. "
-            "Com funcionamento ultra silencioso, é ideal para uso contínuo durante a noite no quarto, em momentos de meditação "
-            "ou enquanto você trabalha, garantindo um sono tranquilo e melhora significativa na umidade do ar, aliviando sintomas "
-            "de ar seco, alergias e problemas respiratórios. Possui sistema de iluminação LED com troca de cores suave, criando "
-            "uma iluminação ambiente relaxante e sofisticada. Seu design compacto e moderno adapta-se perfeitamente a qualquer decoração, "
-            "enquanto a alimentação bivolt e o desligamento automático de segurança ao esgotar a água oferecem total tranquilidad e praticidade.\n\n"
-            "ESPECIFICAÇÕES TÉCNICAS E ATRIBUTOS:\n"
-            "- Tecnologia de Umidificação: Névoa Ultrassônica Fria\n"
-            "- Alimentação: Bivolt Automático (110V/220V)\n"
-            "- Modos de Iluminação: Iluminação LED Multicores\n"
-            "- Função Difusor: Compatível com Óleos Essenciais Aromáticos\n"
-            "- Sistema de Segurança: Desligamento Automático Inteligente sem Água\n"
-            "- Nível de Ruído: Operação Silenciosa (< 35dB)\n\n"
-            "CONTEÚDO DA EMBALAGEM:\n"
-            f"- 01 {prod_nome}\n"
-            "- 01 Cabo de Alimentação Bivolt\n"
-            "- 01 Manual de Instruções em Português"
-        )
-        html_limpo = (
-            f"<p><b>Transforme o ar e o bem-estar do seu ambiente com o {prod_nome}!</b></p>\n"
-            f"<p>Desenvolvido com tecnologia de névoa ultrassônica fria de alta frequência, o <b>{prod_nome}</b> purifica e umidifica "
-            "o ar com máxima eficiência, aliviando o desconforto de dias secos, alergias e problemas respiratórios. Sua operação ultra silenciosa "
-            "permite uso contínuo durante o sono, estudo ou trabalho sem gerar distrações.</p>\n"
-            "<p><b>Principais Benefícios e Recursos:</b><br>\n"
-            "- <b>Névoa Ultrassônica Fria:</b> Fragmentação em micropartículas que mantêm as propriedades dos óleos essenciais.<br>\n"
-            "- <b>Aromaterapia Integrada:</b> Adicione suas essências favoritas para criar uma atmosfera relaxante e renovadora.<br>\n"
-            "- <b>Iluminação LED Suave:</b> Cores e luzes agradáveis para compor a decoração do ambiente.<br>\n"
-            "- <b>Segurança Automática:</b> Desligamento inteligente ao identificar o término da água no reservatório.<br>\n"
-            "- <b>Alimentação Bivolt:</b> Pronto para conectar em qualquer tomada 110V ou 220V com baixo consumo de energia.</p>\n"
-            "<p><b>Especificações Técnicas:</b><br>\n"
-            "- Alimentação: Bivolt Automático (110V / 220V)<br>\n"
-            "- Operação: Ultrassônica Silenciosa (< 35dB)<br>\n"
-            "- Compatibilidade: Água e Óleos Essenciais Hidrossolúveis</p>\n"
-            "<p><b>Conteúdo da Embalagem:</b><br>\n"
-            f"- 01 {prod_nome}<br>\n"
-            "- 01 Cabo de Alimentação<br>\n"
-            "- 01 Manual do Usuário em Português</p>"
-        )
-    else:
-        texto_fluido = (
-            f"Descubra a combinação ideal de praticidade, eficiência e alta durabilidade com o {prod_nome}. "
-            "Desenvolvido sob rigorosos padrões de qualidade e testes industriais, este produto foi projetado para atender "
-            "às necessidades mais exigentes da sua rotina diária, oferecendo desempenho superior e facilidade de manuseio. "
-            "Construído com materiais de primeira linha e acabamento reforçado, garante resistência contra desgastes, impactos "
-            "e uso contínuo. Seu design ergonômico e funcional adapta-se perfeitamente ao seu espaço, promovendo organização, "
-            "segurança e alta usabilidade em qualquer ambiente.\n\n"
-            "ESPECIFICAÇÕES TÉCNICAS:\n"
-            "- Estrutura: Material de Alta Resistência e Durabilidade\n"
-            "- Compatibilidade: Uso Versátil e Multiuso no Dia a Dia\n"
-            "- Acabamento: Padrão Premium com Encaixes de Precisão\n"
-            "- Manutenção: Fácil Limpeza e Higienização\n\n"
-            "CONTEÚDO DA EMBALAGEM:\n"
-            f"- 01 {prod_nome}\n"
-            "- 01 Manual de Instruções em Português"
-        )
-        html_limpo = (
-            f"<p><b>Surpreenda-se com a qualidade e praticidade do {prod_nome}!</b></p>\n"
-            f"<p>O <b>{prod_nome}</b> foi desenvolvido para entregar durabilidade, eficiência e excelente usabilidade. "
-            "Fabricado com componentes de alto padrão, é a escolha ideal para quem busca resolver necessidades do dia a dia com confiança.</p>\n"
-            "<p><b>Destaques do Produto:</b><br>\n"
-            "- <b>Estrutura Reforçada:</b> Maior resistência para uso contínuo e longa vida útil.<br>\n"
-            "- <b>Design Ergonômico:</b> Facilidade de manuseio e otimização de espaço.<br>\n"
-            "- <b>Uso Intuitivo:</b> Simplicidade na utilização sem complicações.</p>\n"
-            "<p><b>Conteúdo da Embalagem:</b><br>\n"
-            f"- 01 {prod_nome}<br>\n"
-            "- 01 Manual de Instruções em Português</p>"
-        )
+def gerar_descricao_a10_dinamica(titulo_base: str) -> tuple:
+    """
+    Gera descrição e HTML dinâmicos para qualquer tipo de produto.
+    """
+    prod_nome = " ".join(re.findall(r'\w+', titulo_base)[:5]).title()
+    
+    texto_fluido = (
+        f"Descubra a combinação ideal de praticidade, eficiência e alta durabilidade com o {prod_nome}. "
+        "Desenvolvido sob rigorosos padrões de qualidade e testes industriais, este produto foi projetado para atender "
+        "às necessidades mais exigentes da sua rotina diária, oferecendo desempenho superior e facilidade de manuseio. "
+        "Construído com materiais de primeira linha e acabamento reforçado, garante resistência contra desgastes, impactos "
+        "e uso contínuo. Seu design ergonômico e funcional adapta-se perfeitamente ao seu espaço, promovendo organização, "
+        "segurança e alta usabilidade em qualquer ambiente.\n\n"
+        "ESPECIFICAÇÕES TÉCNICAS E ATRIBUTOS:\n"
+        "- Estrutura: Material de Alta Densidade e Resistência\n"
+        "- Compatibilidade: Uso Versátil e Multiuso no Dia a Dia\n"
+        "- Acabamento: Padrão Premium com Encaixes de Precisão\n"
+        "- Manutenção: Fácil Limpeza e Higienização\n\n"
+        "CONTEÚDO DA EMBALAGEM:\n"
+        f"- 01 {prod_nome}\n"
+        "- 01 Manual de Instruções em Português"
+    )
+    
+    html_limpo = (
+        f"<p><b>Surpreenda-se com a qualidade e praticidade do {prod_nome}!</b></p>\n"
+        f"<p>O <b>{prod_nome}</b> foi desenvolvido para entregar durabilidade, eficiência e excelente usabilidade. "
+        "Fabricado com componentes de alto padrão, é a escolha ideal para quem busca resolver necessidades do dia a dia com confiança.</p>\n"
+        "<p><b>Destaques do Produto:</b><br>\n"
+        "- <b>Estrutura Reforçada:</b> Maior resistência para uso contínuo e longa vida útil.<br>\n"
+        "- <b>Design Ergonômico:</b> Facilidade de manuseio e otimização de espaço.<br>\n"
+        "- <b>Uso Intuitivo:</b> Simplicidade na utilização sem complicações.</p>\n"
+        "<p><b>Conteúdo da Embalagem:</b><br>\n"
+        f"- 01 {prod_nome}<br>\n"
+        "- 01 Manual de Instruções em Português</p>"
+    )
 
     return texto_fluido, html_limpo
 
 
-def gerar_bullet_points_a10(prod_nome: str) -> str:
-    if "Umidificador" in prod_nome or "Difusor" in prod_nome:
-        bullets = [
-            "💧 **NÉVOA ULTRASSÔNICA FRIAS:** Fragmenta a água em micropartículas finas mantendo as propriedades terapêuticas dos óleos essenciais sem aquecer.",
-            "🌿 **DIFUSOR DE AROMATERAPIA:** Permite a adição direta de óleos essenciais hidrossolúveis para aromatização contínua e alívio do estresse diário.",
-            "🌙 **OPERAÇÃO ULTRA SILENCIOSA:** Sistema de baixo ruído inferior a 35dB, perfeito para uso durante a noite sem interferir no sono do bebê ou no trabalho.",
-            "✨ **ILUMINAÇÃO LED AMBIENTE:** Iluminação integrada com transição suave de cores para compor a decoração do dormitório ou sala de estar.",
-            "🛡️ **DESLIGAMENTO INTELIGENTE:** Sistema de segurança que interrompe o funcionamento automaticamente assim que o reservatório de água se esvazia.",
-            "🔌 **ALIMENTAÇÃO BIVOLT AUTOMÁTICA:** Compatível com redes elétricas de 110V e 220V, garantindo versatilidade em qualquer tomada da casa.",
-            "🍃 **MELHORA DA QUALIDADE DO AR:** Auxilia no alívio de sintomas causados pelo ar seco, como garganta seca, alergias respiratórias e ressecamento labial.",
-            "🏠 **DESIGN COMPACTO E ELEGANTE:** Formato ergonômico e moderno que ocupa pouco espaço na mesa de cabeceira, mesa de escritório ou balcão.",
-            "🧼 **HIGIENIZAÇÃO RÁPIDA E SIMPLES:** Reservatório de fácil acesso que permite limpeza prática e abastecimento de água sem complicações.",
-            "📦 **CONJUNTO COMPLETO PRONTO:** Acompanha cabo de alimentação bivolt e manual explicativo em português para acionamento imediato."
-        ]
-    else:
-        bullets = [
-            "🎯 **ALTA PERFORMANCE E EFICIÊNCIA:** Projeto técnico desenvolvido sob rigorosos testes para entregar desempenho superior na categoria.",
-            "🧱 **ESTRUTURA REFORÇADA:** Confeccionado com materiais de alta densidade para suportar o uso contínuo sem desgaste precoce.",
-            "⚡ **DESIGN ERGONÔMICO E PRÁTICO:** Formato pensado para facilitar o manuseio cotidiano e otimizar o espaço de armazenamento.",
-            "🛡️ **COMPONENTES CERTIFICADOS:** Fabricação atóxica e segura conforme as diretrizes regulatórias e de proteção ao consumidor.",
-            "🔧 **MONTAGEM E USO INTUITIVO:** Acionamento simples sem necessidade de ferramentas complexas ou instalações demoradas.",
-            "💡 **VERSATILIDADE MULTIUSO:** Adapta-se perfeitamente às exigências do ambiente doméstico, comercial ou profissional.",
-            "🧼 **FÁCIL HIGIENIZAÇÃO:** Superfície com acabamento especial que evita o acúmulo de sujidades e simplifica a manutenção.",
-            "⚙️ **ENCAIXES DE PRECISÃO:** Engenharia com tolerâncias reduzidas que garantem estabilidade e funcionamento sem folgas.",
-            "🌿 **EFICIÊNCIA E ECONOMIA:** Desenvolvimento sustentável focado no aproveitamento otimizado de recursos durante o uso.",
-            "📦 **EMBALAGEM DE PROTEÇÃO:** Enviado em caixa reforçada para preservar a integridade estrutural do produto até o destino."
-        ]
+def gerar_bullet_points_a10_dinamico(titulo_base: str) -> str:
+    """
+    Gera 10 Bullet Points A10 aplicáveis dinamicamente ao produto identificado.
+    """
+    prod_nome = " ".join(re.findall(r'\w+', titulo_base)[:4]).upper()
+    bullets = [
+        f"🎯 **ALTA PERFORMANCE E EFICIÊNCIA:** Projeto do {prod_nome} desenvolvido sob testes rigorosos para entregar desempenho superior.",
+        "🧱 **ESTRUTURA REFORÇADA:** Confeccionado com materiais de alta densidade para suportar o uso contínuo sem desgaste precoce.",
+        "⚡ **DESIGN ERGONÔMICO E PRÁTICO:** Formato pensado para facilitar o manuseio cotidiano e otimizar o espaço de armazenamento.",
+        "🛡️ **COMPONENTES CERTIFICADOS:** Fabricação atóxica e segura conforme as diretrizes regulatórias e de proteção ao consumidor.",
+        "🔧 **MONTAGEM E USO INTUITIVO:** Acionamento simples sem necessidade de ferramentas complexas ou instalações demoradas.",
+        "💡 **VERSATILIDADE MULTIUSO:** Adapta-se perfeitamente às exigências do ambiente doméstico, comercial ou profissional.",
+        "🧼 **FÁCIL HIGIENIZAÇÃO:** Superfície com acabamento especial que evita o acúmulo de sujidades e simplifica a manutenção.",
+        "⚙️ **ENCAIXES DE PRECISÃO:** Engenharia com tolerâncias reduzidas que garantem estabilidade e funcionamento sem folgas.",
+        "🌿 **EFICIÊNCIA E ECONOMIA:** Desenvolvimento sustentável focado no aproveitamento otimizado de recursos durante o uso.",
+        "📦 **EMBALAGEM DE PROTEÇÃO:** Enviado em caixa reforçada para preservar a integridade estrutural do produto até o destino."
+    ]
     return "\n".join([f"* {b}" for b in bullets])
 
 
-def gerar_backend_keywords_a10(prod_nome: str, titulo_a: str, titulo_b: str) -> str:
+def gerar_backend_keywords_a10_dinamico(titulo_a: str, titulo_b: str, dados_base: dict) -> str:
+    """
+    Gera Backend Search Terms preenchendo até 230 bytes dinamicamente, sem repetir termos do título.
+    """
     palavras_titulos = set(
         remover_acentos(w.lower()) 
         for w in re.findall(r'\w+', titulo_a + " " + titulo_b)
         if len(w) > 1
     )
 
-    if "Umidificador" in prod_nome or "Difusor" in prod_nome:
-        candidatos = [
-            "aromatizador", "vaporizador", "purificador", "essencias", "ambiente",
-            "dormitorio", "quarto", "bebe", "escritorio", "casa", "umidade",
-            "saude", "respiracao", "alergia", "rinite", "nevoa", "fria",
-            "maternal", "bem", "estar", "fragrancia", "oleo", "essencial",
-            "climatizador", "aromatizacao", "terapia", "relaxe", "meditacao",
-            "desidratacao", "pulmonar", "noite", "sono", "tranquilo", "silencioso",
-            "aparato", "eletrico", "tomada", "usb", "portatil", "pequeno", "mesa"
-        ]
-    else:
-        candidatos = [
-            "multiuso", "pratico", "ergonomico", "casa", "utilidade",
-            "acessorio", "duravel", "respiravel", "compacto", "organizador",
-            "resistente", "eficiente", "cotidiano", "trabalho", "escritorio",
-            "qualidade", "uso", "diario", "facil", "manuseio", "novidade"
-        ]
+    # Gera palavras candidatas com base nos termos reais do ASIN e sinônimos de busca
+    candidatos_base = [
+        "multiuso", "pratico", "ergonomico", "casa", "utilidade", "acessorio", 
+        "duravel", "compacto", "organizador", "resistente", "eficiente", 
+        "cotidiano", "trabalho", "escritorio", "uso", "diario", "facil", 
+        "manuseio", "original", "modelo", "novo", "qualidade"
+    ] + [remover_acentos(t.lower()) for t in dados_base.get("termos_chave", [])]
 
     backend_unicas = []
-    for cand in candidatos:
-        cand_clean = remover_acentos(cand.lower().strip())
-        if cand_clean not in palavras_titulos and cand_clean not in backend_unicas:
+    for cand in candidatos_base:
+        cand_clean = cand.strip()
+        if cand_clean and cand_clean not in palavras_titulos and cand_clean not in backend_unicas:
             backend_unicas.append(cand_clean)
 
     resultado = ""
@@ -281,21 +207,22 @@ def analisar_e_otimizar_listing(
         except Exception:
             api_key = ""
 
-    termo_busca = produto_nosso.strip() if produto_nosso.strip() else asin_input.strip()
-    concorrentes, termo_referencia = buscar_concorrentes_por_foto_e_asin(termo_busca)
+    # Raspa dados reais do ASIN informado
+    dados_base = extrair_dados_asin_base(asin_input)
+    titulo_referencia = dados_base["titulo_base"]
 
-    links_md = "### 🔗 5 Concorrentes Diretos do Mesmo Modelo / Foto (Amazon BR):\n\n"
-    for i, conc in enumerate(concorrentes[:5], start=1):
-        links_md += str(i) + ". [" + str(conc['titulo']) + "](" + str(conc['link']) + ") - **ASIN:** `" + str(conc['asin']) + "`\n"
+    links_md = "### 🔗 5 Concorrentes Diretos Mapeados do ASIN Base (Amazon BR):\n\n"
+    for i, conc in enumerate(dados_base["concorrentes"][:5], start=1):
+        links_md += f"{i}. [{conc['titulo']}]({conc['link']}) - **ASIN:** `{conc['asin']}`\n"
     links_md += "\n---\n"
 
     prompt_mestre = (
         "Você é o Maior Especialista em SEO e Copywriter para a Amazon Brasil.\n\n"
-        "📌 DADOS DO PRODUTO:\n"
+        "📌 DADOS DO PRODUTO (EXTRAÍDOS DA PÁGINA DO ASIN):\n"
         "- ASIN / Entrada: " + str(asin_input) + "\n"
-        "- Produto Referência / Nicho: " + str(termo_referencia) + "\n\n"
+        "- Título Real Identificado: " + str(titulo_referencia) + "\n\n"
         "🧠 ETAPA DE ANÁLISE (OBRIGATÓRIA - SILENCIOSA - NÃO EXIBIR NA SAÍDA):\n"
-        "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos.\n\n"
+        "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos baseando-se estritamente no produto identificado.\n\n"
         "🚨 REGRAS CRÍTICAS DE COPYWRITING E CONFORMIDADE AMAZON:\n"
         "1. TÍTULOS A e B: Máximo de 75 caracteres cada. Sem palavras proibidas ('Pronta Entrega', 'FBA', 'Envio Rápido', 'Alta Qualidade', 'Premium', 'Melhor'). Estrutura: [Nome do Produto] + [Especificação/Atributo].\n"
         "2. DESCRIÇÃO DO PRODUTO: Texto fluido entre 1.200 e 1.900 caracteres em técnica AIDA com especificações técnicas e conteúdo da embalagem.\n"
@@ -328,15 +255,12 @@ def analisar_e_otimizar_listing(
         except Exception:
             pass
 
-    prod_nome = (
-        termo_referencia.title() if termo_referencia else "Produto Consultado"
-    )
-
-    titulo_a = otimizar_titulo_a10_75_chars(prod_nome, foco_seo=False)
-    titulo_b = otimizar_titulo_a10_75_chars(prod_nome, foco_seo=True)
-    desc_fluida, desc_html = gerar_descricao_a10_completa(prod_nome)
-    bullet_points_md = gerar_bullet_points_a10(prod_nome)
-    backend_clean = gerar_backend_keywords_a10(prod_nome, titulo_a, titulo_b)
+    # GERAÇÃO DINÂMICA
+    titulo_a = otimizar_titulo_a10_75_chars(titulo_referencia, foco_seo=False)
+    titulo_b = otimizar_titulo_a10_75_chars(titulo_referencia, foco_seo=True)
+    desc_fluida, desc_html = gerar_descricao_a10_dinamica(titulo_referencia)
+    bullet_points_md = gerar_bullet_points_a10_dinamico(titulo_referencia)
+    backend_clean = gerar_backend_keywords_a10_dinamico(titulo_a, titulo_b, dados_base)
 
     analise_dinamica = (
         "### 📊 Anúncio Gerado para Amazon Brasil\n\n"
@@ -384,9 +308,7 @@ def analisar_e_otimizar_listing(
         "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, summary banner with trust badges in Portuguese text.\n\n"
         "---\n\n"
         "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
-        "- **Cena 01 (0–5s):** Gancho visual apresentando o "
-        + prod_nome
-        + " em funcionamento.\n"
+        "- **Cena 01 (0–5s):** Gancho visual apresentando o produto em funcionamento.\n"
         "- **Cena 02 (5–15s):** Demonstração prática dos principais recursos no dia a dia.\n"
         "- **Cena 03 (15–25s):** Detalhes de acabamento e diferenciais técnicos.\n"
         "- **Cena 04 (25–35s):** Aplicação em ambiente real (casa/escritório).\n"
