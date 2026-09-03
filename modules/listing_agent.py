@@ -215,6 +215,10 @@ def gerar_bullet_points_a10(prod_nome: str) -> str:
 
 
 def gerar_backend_keywords_a10(prod_nome: str, titulo_a: str, titulo_b: str) -> str:
+    """
+    Maximiza o uso do campo de Search Terms preenchendo até ~228-230 bytes cravados.
+    Remove totalmente redundâncias com os títulos, acentos e vírgulas.
+    """
     palavras_titulos = set(
         remover_acentos(w.lower()) 
         for w in re.findall(r'\w+', titulo_a + " " + titulo_b)
@@ -225,13 +229,18 @@ def gerar_backend_keywords_a10(prod_nome: str, titulo_a: str, titulo_b: str) -> 
         candidatos = [
             "aromatizador", "vaporizador", "purificador", "essencias", "ambiente",
             "dormitorio", "quarto", "bebe", "escritorio", "casa", "umidade",
-            "saude", "respiracao", "alergia", "rinite", "nevosa", "fria",
-            "maternal", "bem", "estar", "fragrancia", "oleo", "essencial"
+            "saude", "respiracao", "alergia", "rinite", "nevoa", "fria",
+            "maternal", "bem", "estar", "fragrancia", "oleo", "essencial",
+            "climatizador", "aromatizacao", "terapia", "relaxe", "meditacao",
+            "desidratacao", "pulmonar", "noite", "sono", "tranquilo", "silencioso",
+            "aparato", "eletrico", "tomada", "usb", "portatil", "pequeno", "mesa"
         ]
     else:
         candidatos = [
             "multiuso", "pratico", "ergonomico", "casa", "utilidade",
-            "acessorio", "dia", "dia", "duravel", "respiravel", "compacto"
+            "acessorio", "duravel", "respiravel", "compacto", "organizador",
+            "resistente", "eficiente", "cotidiano", "trabalho", "escritorio",
+            "qualidade", "uso", "diario", "facil", "manuseio", "novidade"
         ]
 
     backend_unicas = []
@@ -240,9 +249,16 @@ def gerar_backend_keywords_a10(prod_nome: str, titulo_a: str, titulo_b: str) -> 
         if cand_clean not in palavras_titulos and cand_clean not in backend_unicas:
             backend_unicas.append(cand_clean)
 
-    resultado = " ".join(backend_unicas)
-    resultado_encoded = resultado.encode("utf-8")[:230]
-    return resultado_encoded.decode("utf-8", errors="ignore").rsplit(" ", 1)[0]
+    # Monta a string preenchendo o limite máximo de 230 bytes sem cortar palavra no meio
+    resultado = ""
+    for palavra in backend_unicas:
+        candidato_string = (resultado + " " + palavra).strip() if resultado else palavra
+        if len(candidato_string.encode("utf-8")) <= 230:
+            resultado = candidato_string
+        else:
+            break
+
+    return resultado
 
 
 def analisar_e_otimizar_listing(
@@ -258,24 +274,25 @@ def analisar_e_otimizar_listing(
     termo_busca = produto_nosso.strip() if produto_nosso.strip() else asin_input.strip()
     concorrentes, termo_referencia = buscar_concorrentes_nicho(termo_busca)
 
+    # Links em Markdown com URL completa da Amazon BR
     links_md = "### 🔗 5 Concorrentes Diretos Mapeados no Mercado (Amazon BR):\n\n"
     for i, conc in enumerate(concorrentes[:5], start=1):
         links_md += str(i) + ". [" + str(conc['titulo']) + "](" + str(conc['link']) + ") - **ASIN:** `" + str(conc['asin']) + "`\n"
     links_md += "\n---\n"
 
     prompt_mestre = (
-        "Você é o Maior Especialista em Algoritmo A9/A10 da Amazon Brasil e Copywriter de Alta Conversão.\n\n"
+        "Você é o Maior Especialista em SEO e Copywriter para a Amazon Brasil.\n\n"
         "📌 DADOS DO PRODUTO:\n"
         "- ASIN / Entrada: " + str(asin_input) + "\n"
         "- Produto Referência / Nicho: " + str(termo_referencia) + "\n\n"
         "🧠 ETAPA DE ANÁLISE (OBRIGATÓRIA - SILENCIOSA - NÃO EXIBIR NA SAÍDA):\n"
         "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos.\n\n"
-        "🚨 REGRAS CRÍTICAS DE COPYWRITING E CONFORMIDADE AMAZON A10:\n"
+        "🚨 REGRAS CRÍTICAS DE COPYWRITING E CONFORMIDADE AMAZON:\n"
         "1. TÍTULOS A e B: Máximo de 75 caracteres cada. Sem palavras proibidas ('Pronta Entrega', 'FBA', 'Envio Rápido', 'Alta Qualidade', 'Premium', 'Melhor'). Estrutura: [Nome do Produto] + [Especificação/Atributo].\n"
         "2. DESCRIÇÃO DO PRODUTO: Texto fluido entre 1.200 e 1.900 caracteres em técnica AIDA com especificações técnicas e conteúdo da embalagem.\n"
         "3. VERSÃO HTML DA DESCRIÇÃO: HTML limpo usando APENAS <p>, <b> e <br>.\n"
         "4. BULLET POINTS (10 BULLETS): Formato obrigatório: Emoji + **TÍTULO EM CAIXA ALTA (2 A 4 PALAVRAS):** + explicação técnica/benefício real. Sem termos promocionais.\n"
-        "5. PALAVRAS-CHAVE BACKEND (SEARCH TERMS): Forneça exatamente 20 a 25 palavras-chave únicas separadas apenas por espaço, sem acentos, sem vírgulas, sem numerais e OBRIGATORIAMENTE SEM REPETIR NENHUMA PALAVRA QUE JÁ CONSTA NO TÍTULO A OU TÍTULO B (máximo estrito de 230 bytes).\n"
+        "5. PALAVRAS-CHAVE BACKEND (SEARCH TERMS): Preencha exatamente até o limite máximo de 230 bytes em palavras-chave únicas separadas apenas por espaço, sem acentos, sem vírgulas, sem numerais e OBRIGATORIAMENTE SEM REPETIR NENHUMA PALAVRA QUE JÁ CONSTA NO TÍTULO A OU TÍTULO B.\n"
         "6. 10 PROMPTS PARA IMAGENS DA LISTAGEM: Iniciando OBRIGATORIAMENTE com 'using the attached base product image as an overlay without any modification to the product itself'. Foto 01 fundo branco puro (RGB 255,255,255).\n"
         "7. ROTEIRO DE VÍDEO (30–45s) em 5 cenas.\n"
         "8. CONTEÚDO A+ COMPLETO e 6 PROMPTS PARA BANNERS A+ em inglês.\n\n"
@@ -313,7 +330,7 @@ def analisar_e_otimizar_listing(
     backend_clean = gerar_backend_keywords_a10(prod_nome, titulo_a, titulo_b)
 
     analise_dinamica = (
-        "### 📊 Anúncio Gerado para Algoritmo A9/A10 - Amazon Brasil\n\n"
+        "### 📊 Anúncio Gerado para Amazon Brasil\n\n"
         "**1. TÍTULOS OTIMIZADOS (LIMITE ESTRITO: 75 CARACTERES | SEM TERMOS PROIBIDOS)**\n"
         "- **Título A (Clareza + Atributos):** `"
         + titulo_a
@@ -325,7 +342,7 @@ def analisar_e_otimizar_listing(
         + "` *("
         + str(len(titulo_b))
         + " caracteres)*\n\n"
-        "> ⚠️ **Conformidade A10:** Títulos configurados sem termos promocionais ('Pronta Entrega', 'FBA', 'Envio Rápido') para evitar supressão automática no catálogo da Amazon Brasil.\n\n"
+        "> ⚠️ **Conformidade Amazon:** Títulos configurados sem termos promocionais ('Pronta Entrega', 'FBA', 'Envio Rápido') para evitar supressão automática no catálogo da Amazon Brasil.\n\n"
         "---\n\n"
         "**2. DESCRIÇÃO COMPLETA DO PRODUTO (ATÉ 2.000 CARACTERES - TÉCNICA AIDA)**\n"
         + desc_fluida
@@ -335,11 +352,11 @@ def analisar_e_otimizar_listing(
         + desc_html
         + "\n```\n\n"
         "---\n\n"
-        "**3. 10 BULLET POINTS DE ALTA CONVERSÃO (PADRÃO A10)**\n"
+        "**3. 10 BULLET POINTS DE ALTA CONVERSÃO**\n"
         + bullet_points_md
         + "\n\n"
         "---\n\n"
-        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - MÁX 230 BYTES / A10 - ZERO REPETIÇÃO DO TÍTULO)**\n"
+        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - MÁXIMO APROVEITAMENTO)**\n"
         "`"
         + backend_clean
         + "`\n\n"

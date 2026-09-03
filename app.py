@@ -109,7 +109,7 @@ st.markdown("<div class='sub-header'>Plataforma Inteligente de Operações e Dia
 
 # --- ABAS ---
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "1. Diagnóstico & Listing A9/A10",
+    "1. Diagnóstico & Listing",
     "2. Precificação & Repricer",
     "3. Gestão de Ads (PPC)",
     "4. Logística & FBA/DBA",
@@ -118,9 +118,9 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "7. Relatórios Executivos"
 ])
 
-# MÓDULO 1: Diagnóstico e Listing A9/A10
+# MÓDULO 1: Diagnóstico e Listing
 with tab1:
-    st.subheader("📝 Módulo 1: Análise e Otimização de Listing (Algoritmo A9/A10)")
+    st.subheader("📝 Módulo 1: Análise e Otimização de Listing")
     
     col_in, col_bt = st.columns([4, 1])
     with col_in:
@@ -139,7 +139,7 @@ with tab1:
             except Exception as e:
                 res = f"Erro no processamento: {str(e)}"
 
-            st.success("Diagnóstico A9/A10 concluído com sucesso!")
+            st.success("Diagnóstico concluído com sucesso!")
             st.markdown(res)
 
 # MÓDULO 2: Precificação
