@@ -1,7 +1,6 @@
 import os
 import streamlit as st
 
-# Configuração da página do Streamlit
 st.set_page_config(
     page_title="Central de Marketplace | Amazon Brasil",
     page_icon="⚡",
@@ -9,14 +8,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Importação do Módulo 1 atualizado
-from modules.listing_agent import render_module_1
+from modules.listing_agent import analisar_e_otimizar_listing
 
-# Configuração da Barra Lateral (Sidebar)
 with st.sidebar:
     st.title("⚡ Conexão SP-API & Claude")
-    
-    # Status das Credenciais / Secrets
     api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
     if api_key:
         st.success("Conexão Real Ativa (Secrets / .env)")
@@ -30,11 +25,9 @@ with st.sidebar:
     imposto_efetivo = st.number_input("Imposto Efetivo (%)", value=12.0, step=0.5)
     comissao_amazon = st.number_input("Comissão Amazon (%)", value=15.0, step=0.5)
 
-# Título Principal do Dashboard
 st.title("⚡ Central de Marketplace")
 st.caption("Plataforma Inteligente de Operações e Diagnóstico 360° | Amazon Brasil")
 
-# Estrutura das Abas dos Módulos
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "1. Diagnóstico & Listing",
     "2. Precificação & Repricer",
@@ -45,35 +38,42 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "7. Relatórios Executivos"
 ])
 
-# -----------------------------------------------------------------------------
-# ABA 1: MÓDULO 1 - ANÁLISE, PESQUISA E OTIMIZAÇÃO DE LISTING (TEXTO OU FOTO)
-# -----------------------------------------------------------------------------
 with tab1:
-    render_module_1()
+    st.subheader("📦 Módulo 1: Análise e Otimização de Listing")
+    
+    termo_input = st.text_input(
+        "Insira o ASIN ou Nome do Produto (Ex: B0BQWX1LSY ou Grelha Churrasqueira Dupla):",
+        value="Grelha Churrasqueira Dupla"
+    )
+    
+    if st.button("🚀 Executar Diagnóstico", use_container_width=True):
+        if not termo_input.strip():
+            st.warning("Por favor, informe a palavra-chave ou ASIN.")
+        else:
+            with st.spinner("Mapeando ofertas na Amazon BR, gerando SWOT e copy A10..."):
+                resultado = analisar_e_otimizar_listing(termo_input)
+                st.markdown(resultado)
 
-# -----------------------------------------------------------------------------
-# DEMAIS ABAS (PLACEHOLDERS MANTIDOS)
-# -----------------------------------------------------------------------------
 with tab2:
     st.subheader("2. Precificação & Repricer")
-    st.info("Módulo de precificação dinâmica e reprefatoração ativo.")
+    st.info("Módulo ativo.")
 
 with tab3:
     st.subheader("3. Gestão de Ads (PPC)")
-    st.info("Módulo de otimização de campanhas de anúncios ativo.")
+    st.info("Módulo ativo.")
 
 with tab4:
     st.subheader("4. Logística & FBA/DBA")
-    st.info("Módulo de gestão de estoque e remessas FBA/DBA ativo.")
+    st.info("Módulo ativo.")
 
 with tab5:
     st.subheader("5. Reconciliação Financeira")
-    st.info("Módulo de conferência de repasses e taxas ativo.")
+    st.info("Módulo ativo.")
 
 with tab6:
     st.subheader("6. Consultoria Fiscal")
-    st.info("Módulo de checagem de tributação e regras fiscais ativo.")
+    st.info("Módulo ativo.")
 
 with tab7:
     st.subheader("7. Relatórios Executivos")
-    st.info("Módulo de geração de relatórios consolidados ativo.")
+    st.info("Módulo ativo.")
