@@ -10,7 +10,7 @@ from anthropic import Anthropic
 def buscar_concorrentes_por_asin_base(asin_ou_termo: str) -> tuple:
     """
     Mapeia os concorrentes gerando links reais de busca direta e exata no catálogo da Amazon BR.
-    Garante queNENHUM link resulte em erro 404 (página não encontrada).
+    Garante que NENHUM link resulte em erro 404.
     """
     entrada = asin_ou_termo.strip()
     headers = {
@@ -67,9 +67,9 @@ def buscar_concorrentes_por_asin_base(asin_ou_termo: str) -> tuple:
     except Exception:
         pass
 
-    # Fallback 100% Funcional (Garante links reais de busca filtrada por nicho sem erro 404)
+    # Fallback 100% Funcional com indentação corrigida
     if len(concorrentes) < 5:
-         variacoes_nicho = [
+        variacoes_nicho = [
             f"{termo_limpo} Ultrassonico",
             f"{termo_limpo} Silencioso",
             f"{termo_limpo} Bivolt",
