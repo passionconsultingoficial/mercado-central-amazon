@@ -8,7 +8,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-from modules.listing_agent import analisar_e_otimizar_listing, analisar_imagem_visuo_computacional
+from modules.listing_agent import render_module_1
 
 with st.sidebar:
     st.title("⚡ Conexão SP-API & Claude")
@@ -39,43 +39,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 ])
 
 with tab1:
-    st.subheader("📦 Módulo 1: Análise e Otimização de Listing")
-
-    metodo_pesquisa = st.radio(
-        "Como deseja buscar o produto?",
-        ["🔤 Digitar ASIN ou Nome do Produto", "📸 Subir Foto do Produto (Busca Visual)"],
-        horizontal=True
-    )
-
-    termo_final = ""
-
-    if "Digitar" in metodo_pesquisa:
-        termo_input = st.text_input(
-            "Insira o ASIN ou Nome do Produto (Ex: B0BQWX1LSY ou Grelha Churrasqueira Dupla):",
-            value="Grelha Churrasqueira Dupla"
-        )
-        termo_final = termo_input.strip()
-    else:
-        uploaded_image = st.file_uploader("Envie a foto do seu produto (PNG, JPG, WEBP):", type=["png", "jpg", "jpeg", "webp"])
-        if uploaded_image is not None:
-            col_img1, col_img2 = st.columns([1, 2])
-            with col_img1:
-                st.image(uploaded_image, caption="Foto Enviada", width=200)
-            with col_img2:
-                with st.spinner("🔍 Analisando imagem do produto com Claude Vision..."):
-                    termo_identificado = analisar_imagem_visuo_computacional(
-                        uploaded_image.getvalue(), uploaded_image.type, api_key
-                    )
-                    st.success(f"**Produto Identificado:** `{termo_identificado}`")
-                    termo_final = termo_identificado
-
-    if st.button("🚀 Executar Diagnóstico", use_container_width=True):
-        if not termo_final:
-            st.warning("Por favor, informe a palavra-chave/ASIN ou envie uma imagem válida.")
-        else:
-            with st.spinner("Mapeando concorrentes na Amazon BR, identificando Líder de Vendas e gerando copy A10..."):
-                resultado = analisar_e_otimizar_listing(termo_final)
-                st.markdown(resultado)
+    render_module_1()
 
 with tab2:
     st.subheader("2. Precificação & Repricer")

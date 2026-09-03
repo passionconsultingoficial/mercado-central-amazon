@@ -34,19 +34,15 @@ def obter_token_sp_api() -> str:
 
 
 def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
-    """
-    Analisa a imagem utilizando o endpoint atualizado da Claude Sonnet Vision.
-    """
+    """Análise multimodal via Claude Vision utilizando fallback seguro de modelos."""
     if not api_key or len(api_key.strip()) < 10:
         return ""
 
     try:
         b64_img = base64.b64encode(image_bytes).decode('utf-8')
         client = Anthropic(api_key=api_key.strip())
-
         media_type = mime_type if mime_type in ["image/jpeg", "image/png", "image/gif", "image/webp"] else "image/jpeg"
 
-        # Tenta a ID do modelo mais recente para evitar erro 404
         modelos_tentativa = [
             "claude-3-5-sonnet-latest",
             "claude-3-5-sonnet-20241022",
@@ -73,9 +69,9 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
                                 {
                                     "type": "text",
                                     "text": (
-                                        "Examine a foto do produto. Qual é exatamente este item comercial? "
-                                        "Retorne APENAS o nome exato do produto em português do Brasil para buscar na Amazon BR (2 a 5 palavras). "
-                                        "Exemplo: 'Comedouro Pet Elevado Inox Duo'. Sem saudações ou explicações."
+                                        "Examine a foto deste produto comercial. Qual é exatamente este produto? "
+                                        "Retorne APENAS o nome do produto em português do Brasil para buscar na Amazon BR (2 a 5 palavras). "
+                                        "Exemplo se for item pet: 'Comedouro Pet Elevado Inox Duo'. Não inclua explicações ou saudações."
                                     )
                                 }
                             ],
@@ -95,9 +91,7 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
 
 
 def buscar_melhor_vendedor_amazon_br(query: str) -> dict:
-    """
-    Realiza busca real na Amazon BR pela palavra-chave do produto identificado e extrai o concorrente.
-    """
+    """Busca o concorrente Best Seller na Amazon BR para servir de benchmark."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -404,4 +398,85 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
         + "\n\n"
         "#### Versão HTML para o Seller Central:\n```html\n"
         + desc_html
-        + "\n
+        + "\n```\n\n"
+        "---\n\n"
+        "**3. 10 BULLET POINTS DE ALTA CONVERSÃO**\n"
+        + bullet_points_md
+        + "\n\n"
+        "---\n\n"
+        "**4. PALAVRAS-CHAVE BACKEND (SEARCH TERMS - MÁXIMO APROVEITAMENTO)**\n"
+        "`" + backend_clean + "`\n\n"
+        "> 📌 **Byte Count:** " + str(len(backend_clean.encode('utf-8'))) + " / 230 bytes autorizados. Nenhuma palavra presente nos Títulos A ou B foi repetida nesta lista.\n\n"
+        "---\n\n"
+        "**5. PROMPTS PARA IMAGENS DA LISTAGEM (10 PROMPTS)**\n"
+        "1. **Foto 01 (Principal - Fundo Branco):** using the attached base product image as an overlay without any modification to the product itself, isolated on seamless pure white background (RGB 255,255,255), product filling 85% of frame, crisp studio commercial lighting, Amazon main image standard.\n"
+        "2. **Foto 02 (Uso Real / Lifestyle):** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle background with cat or dog, natural commercial lighting.\n"
+        "3. **Foto 03 (Infográfico de Benefícios):** using the attached base product image as an overlay without any modification to the product itself, clean infographic layout pointing out ergonomic benefits and non-slip base in Portuguese.\n"
+        "4. **Foto 04 (Dimensões e Escala):** using the attached base product image as an overlay without any modification to the product itself, dimensional infographic with clear height, width, and capacity in ML/grams.\n"
+        "5. **Foto 05 (Conteúdo da Embalagem):** using the attached base product image as an overlay without any modification to the product itself, overhead layflat view showing bowl and accessories.\n"
+        "6. **Foto 06 (Close de Material):** using the attached base product image as an overlay without any modification to the product itself, macro shot focusing on stainless steel texture or non-toxic finish.\n"
+        "7. **Foto 07 (Funcionalidade):** using the attached base product image as an overlay without any modification to the product itself, demonstration showing easy washing and cleaning.\n"
+        "8. **Foto 08 (Cenários Diversos):** using the attached base product image as an overlay without any modification to the product itself, home environment setup.\n"
+        "9. **Foto 09 (Comparativo):** using the attached base product image as an overlay without any modification to the product itself, side-by-side comparison showing ergonomic posture vs floor feeding.\n"
+        "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, trust badges in Portuguese.\n\n"
+        "---\n\n"
+        "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
+        "- **Cena 01 (0–5s):** Gancho visual apresentando o pet utilizando o " + termo_exibicao + " confortavelmente.\n"
+        "- **Cena 02 (5–15s):** Demonstração da trava antiderrapante e higienização simples da tigela.\n"
+        "- **Cena 03 (15–25s):** Detalhes de acabamento e estrutura atóxica.\n"
+        "- **Cena 04 (25–35s):** Aplicação prática na rotina doméstica.\n"
+        "- **Cena 05 (35–45s):** Encerramento da marca para o público Pet na Amazon BR.\n\n"
+        "---\n\n"
+        "**7. CONTEÚDO A+ & 8. PROMPTS A+ (6 BANNERS INGLÊS)**\n"
+        "1. **Banner Hero:** using the attached base product image as an overlay without any modification to the product itself, wide Amazon A+ banner composition, studio lighting.\n"
+        "2. **Benefícios Visuais:** using the attached base product image as an overlay without any modification to the product itself, clean A+ infographic layout.\n"
+        "3. **Diferencial Técnico:** using the attached base product image as an overlay without any modification to the product itself, macro lighting highlighting build quality.\n"
+        "4. **Uso Real:** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle scene with pet.\n"
+        "5. **Comparação Visual:** using the attached base product image as an overlay without any modification to the product itself, clean comparative layout.\n"
+        "6. **Capacidade / Aplicação:** using the attached base product image as an overlay without any modification to the product itself, visual demonstration of practical application.\n"
+    )
+
+    return links_md + relatorio_swot + analise_dinamica
+
+
+def render_module_1():
+    """Renderiza a interface do Módulo 1 garantindo importação limpa."""
+    st.subheader("📦 Módulo 1: Análise e Otimização de Listing")
+
+    metodo_pesquisa = st.radio(
+        "Como deseja buscar o produto?",
+        ["🔤 Digitar ASIN ou Nome do Produto", "📸 Subir Foto do Produto (Busca Visual)"],
+        horizontal=True
+    )
+
+    termo_final = ""
+    api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+
+    if "Digitar" in metodo_pesquisa:
+        termo_input = st.text_input(
+            "Insira o ASIN ou Nome do Produto (Ex: B0BQWX1LSY ou Grelha Churrasqueira Dupla):",
+            value="Grelha Churrasqueira Dupla"
+        )
+        termo_final = termo_input.strip()
+    else:
+        uploaded_image = st.file_uploader("Envie a foto do seu produto (PNG, JPG, WEBP):", type=["png", "jpg", "jpeg", "webp"])
+        if uploaded_image is not None:
+            col_img1, col_img2 = st.columns([1, 2])
+            with col_img1:
+                st.image(uploaded_image, caption="Foto Enviada", width=200)
+            with col_img2:
+                with st.spinner("🔍 Analisando imagem do produto com Claude Vision..."):
+                    termo_identificado = analisar_imagem_visuo_computacional(
+                        uploaded_image.getvalue(), uploaded_image.type, api_key
+                    )
+                    if termo_identificado:
+                        st.success(f"**Produto Identificado:** `{termo_identificado}`")
+                        termo_final = termo_identificado
+
+    if st.button("🚀 Executar Diagnóstico", use_container_width=True):
+        if not termo_final:
+            st.warning("Por favor, informe a palavra-chave/ASIN ou envie uma imagem válida.")
+        else:
+            with st.spinner("Mapeando concorrentes na Amazon BR, identificando Líder de Vendas e gerando copy A10..."):
+                resultado = processar_e_gerar_markdown(termo_final)
+                st.markdown(resultado)
