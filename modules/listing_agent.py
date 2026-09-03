@@ -35,15 +35,17 @@ def obter_token_sp_api() -> str:
 
 def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
     """
-    Análise visual multimodal via Claude Vision.
-    Extrai o termo de busca comercial exato em português do produto na foto.
+    Usa Claude Vision para identificar visualmente o produto real na foto (ex: Comedouro Pet).
     """
     if not api_key or len(api_key.strip()) < 10:
-        return "Grelha Churrasqueira Dupla Inox"
+        return ""
 
     try:
         b64_img = base64.b64encode(image_bytes).decode('utf-8')
         client = Anthropic(api_key=api_key.strip())
+
+        # Ajusta media_type para formatos aceitos
+        media_type = mime_type if mime_type in ["image/jpeg", "image/png", "image/gif", "image/webp"] else "image/jpeg"
 
         response = client.messages.create(
             model="claude-3-5-sonnet-20240620",
@@ -56,43 +58,46 @@ def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
                             "type": "image",
                             "source": {
                                 "type": "base64",
-                                "media_type": mime_type,
+                                "media_type": media_type,
                                 "data": b64_img,
                             },
                         },
                         {
                             "type": "text",
                             "text": (
-                                "Você é um especialista em e-commerce na Amazon Brasil. "
-                                "Analise a imagem deste produto comercial. Retorne APENAS o termo de busca principal em português "
-                                "que um comprador usaria para achar exatamente este produto na Amazon BR (de 2 a 5 palavras). "
-                                "Exemplo: 'Grelha Churrasqueira Dupla Inox' ou 'Prensa Francesa Cafe Vidro'. "
-                                "Não inclua explicações, pontuação ou saudações."
+                                "Examine detalhadamente esta foto de produto comercial. "
+                                "Qual é exatamente este produto? Retorne APENAS o termo de busca em português do Brasil "
+                                "que descreve o item com precisão para buscar na Amazon BR (de 2 a 5 palavras). "
+                                "Exemplo se for um item pet: 'Comedouro Pet Elevado Inox' ou 'Tigela Bebedouro Cães'. "
+                                "NÃO responda com saudações, nem pontuação, apenas o nome direto do produto."
                             )
                         }
                     ],
                 }
             ],
         )
-        return response.content[0].text.strip()
-    except Exception:
-        return "Grelha Churrasqueira Dupla Inox"
+        termo = response.content[0].text.strip().replace("\n", " ").replace(".", "")
+        return termo
+    except Exception as e:
+        st.error(f"Erro na análise visual da imagem: {e}")
+        return ""
 
 
 def buscar_melhor_vendedor_amazon_br(query: str) -> dict:
     """
-    Realiza busca real na Amazon BR pela palavra-chave, extraindo o Best Seller / Lider de vendas.
+    Pesquisa na Amazon BR pelo produto identificado na foto e retorna o principal concorrente.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     }
-    url_search = f"https://www.amazon.com.br/s?k={requests.utils.quote(query)}"
+    query_clean = requests.utils.quote(query)
+    url_search = f"https://www.amazon.com.br/s?k={query_clean}"
     
     dados_lider = {
-        "titulo_lider": f"{query.title()} Modelo Reforçado",
-        "asin_lider": "B08N5WRWNW",
-        "preco_lider": "R$ 89,90",
+        "titulo_lider": f"{query.title()} Ergonômico",
+        "asin_lider": "B0BRN2K9XX",
+        "preco_lider": "R$ 49,90",
         "link_lider": url_search,
         "link_busca": url_search
     }
@@ -167,10 +172,10 @@ def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
 
     termos_busca = [
         (f"Categoria Direta - {termo_exibicao}", query_completa),
-        (f"Ofertas Similares - {termo_exibicao}", f"{query_completa}+inox"),
-        (f"Principais Marcas - {termo_exibicao}", f"{query_completa}+moeda"),
-        (f"Mais Vendidos do Segmento - {termo_exibicao}", f"{query_completa}+reforcada"),
-        (f"Opções de Mercado BR - {termo_exibicao}", f"{query_completa}+modelo")
+        (f"Ofertas Similares - {termo_exibicao}", f"{query_completa}+modelo"),
+        (f"Principais Marcas - {termo_exibicao}", f"{query_completa}+inox"),
+        (f"Mais Vendidos do Segmento - {termo_exibicao}", f"{query_completa}+top"),
+        (f"Opções de Mercado BR - {termo_exibicao}", f"{query_completa}+oferta")
     ]
 
     links_categoria = []
@@ -194,13 +199,13 @@ def otimizar_titulo_a10_75_chars(titulo_referencia: str, palavras_reais: list, f
 
     if foco_seo:
         qualificadores = [
-            "Inox Reforçada", "Cabo Madeira", "Aço Cabos", "Modelo Prático",
-            "Multiuso Cozinha", "Modelo Duplo", "Alta Resistência", "Uso Profissional"
+            "Inox Elevado", "Ergonômico Cães", "Gatos Antiderrapante", "Modelo Prático",
+            "Fácil Higienização", "Alta Resistência", "Uso Diário Pet"
         ]
     else:
         qualificadores = [
-            "Cabo Madeira Reforçado", "Aço Inox Resistente", "Modelo Duplo",
-            "Prático Resistente", "Modelo Ergonômico", "Multiuso Uso Diário"
+            "Base Antiderrapante", "Aço Inox Lavável", "Modelo Elevado",
+            "Prático Resistente", "Design Ergonômico", "Postura Correta Pet"
         ]
 
     candidato = base_prod
@@ -220,67 +225,67 @@ def otimizar_titulo_a10_75_chars(titulo_referencia: str, palavras_reais: list, f
 
 def gerar_relatorio_pontos_fortes_fracos(prod_nome: str, dados_lider: dict) -> str:
     return (
-        f"### 📋 Relatório Diagnóstico do Produto e Análise do Líder de Vendas\n\n"
-        f"🏆 **Líder de Vendas Identificado na Amazon BR:**\n"
-        f"- **Anúncio Benchmark:** [{dados_lider['titulo_lider']}]({dados_lider['link_lider']})\n"
+        f"### 📋 Relatório Diagnóstico do Produto e Análise de Concorrentes\n\n"
+        f"🏆 **Líder / Best Seller Mapeado na Amazon BR:**\n"
+        f"- **Anúncio Concorrente:** [{dados_lider['titulo_lider']}]({dados_lider['link_lider']})\n"
         f"- **ASIN:** `{dados_lider['asin_lider']}` | **Preço Médio:** `{dados_lider['preco_lider']}`\n\n"
-        f"#### 🟢 Pontos Fortes Mapeados do Nicho ({prod_nome}):\n"
-        f"- **Busca Direta e Alta Conversão:** Atende às pesquisas por {prod_nome}, apresentando alta demanda e excelente receptividade no marketplace.\n"
-        "- **Ergonomia e Estrutura:** Construção robusta focada na resistência ao uso contínuo e facilidade de manuseio.\n\n"
+        f"#### 🟢 Pontos Fortes e Oportunidades Mapeadas ({prod_nome}):\n"
+        f"- **Procura Ativa no Nicho Pet:** Atende diretamente a buscas por {prod_nome}, focado no bem-estar, higiene e ergonomia alimentar do animal.\n"
+        "- **Facilidade de Limpeza e Durabilidade:** Materiais laváveis (como aço inox ou plástico atóxico) possuem alta taxa de conversão no e-commerce.\n\n"
         f"#### 🔴 Dores e Reclamações Mapeadas nos Concorrentes ({prod_nome}):\n"
-        "- **Incompatibilidade de Medidas:** Clientes reclamam frequentemente quando o tamanho ou cabo não encaixa no espaço padrão.\n"
-        "- **Qualidade do Acabamento:** Queixas sobre oxidação precoce ou cabos frágeis em marcas inferiores.\n\n"
-        "#### 🎯 Estratégia A10 para Superar o Líder:\n"
-        "- Destaque claro de dimensões técnicas e materiais antiferrugem nos primeiros Bullet Points.\n"
-        "- Imagens de estilo de vida e infográficos mostrando encaixe e durabilidade superior.\n\n"
+        "- **Instabilidade / Antiderrapante Frágil:** Reclamações frequentes apontam tigelas que deslizam ou tombam durante o uso pelo pet.\n"
+        "- **Capacidade e Volume Incorreto:** Queixas de compradores quando o tamanho real em ML/gramas difere da expectativa gerada pelas fotos.\n\n"
+        "#### 🎯 Estratégia de Copys A10 para Superar a Concorrência:\n"
+        "- Destaque claro da capacidade em ML e dimensões exatas na primeira linha dos Bullet Points.\n"
+        "- Prompts A+ e imagens focados na postura ergonômica e trava antiderrapante.\n\n"
         "---\n"
     )
 
 
 def gerar_descricao_a10_dinamica(prod_nome: str) -> tuple:
     texto_fluido = (
-        f"Descubra a combinação ideal de praticidade, eficiência e alta durabilidade com o {prod_nome}. "
-        "Desenvolvido sob rigorosos padrões de qualidade e testes industriais, este produto foi projetado para atender "
-        "às necessidades mais exigentes da sua rotina, oferecendo desempenho superior e facilidade de manuseio. "
-        "Construído com materiais de primeira linha e acabamento reforçado, garante resistência contra desgastes e "
-        "uso contínuo. Seu design ergonômico e funcional adapta-se perfeitamente ao seu espaço, promovendo segurança "
-        "e alta usabilidade em qualquer ambiente.\n\n"
+        f"Proporcione o máximo de conforto, higiene e praticidade com o {prod_nome}. "
+        "Desenvolvido sob rígidos padrões de qualidade e anatomia pet, este produto foi projetado para melhorar "
+        "a experiência diária do seu animalzinho, garantindo uma postura adequada e alimentação confortável. "
+        "Construído com materiais atóxicos e estrutura de fácil higienização, oferece alta resistência contra quedas e "
+        "uso contínuo. Seu design ergonômico evita o desconforto cervical durante as refeições, promovendo saúde "
+        "e organização no ambiente da sua casa.\n\n"
         "ESPECIFICAÇÕES TÉCNICAS E ATRIBUTOS:\n"
-        "- Estrutura: Material de Alta Densidade e Resistência Térmica\n"
-        "- Compatibilidade: Uso Versátil e Prático no Dia a Dia\n"
-        "- Acabamento: Padrão Premium com Encaixes e Cabos Reforçados\n"
-        "- Manutenção: Fácil Limpeza e Higienização\n\n"
+        "- Estrutura: Material Atóxico de Alta Durabilidade\n"
+        "- Higienização: Tigela Removível de Fácil Lavagem\n"
+        "- Estabilidade: Base com Trava Antiderrapante\n"
+        "- Aplicação: Cães e Gatos de Pequeno e Médio Porte\n\n"
         "CONTEÚDO DA EMBALAGEM:\n"
         f"- 01 {prod_nome}\n"
-        "- 01 Manual de Instruções e Cuidados em Português"
+        "- 01 Guia de Uso e Cuidados de Higiene"
     )
     html_limpo = (
-        f"<p><b>Surpreenda-se com a qualidade e praticidade do {prod_nome}!</b></p>\n"
-        f"<p>O <b>{prod_nome}</b> foi desenvolvido para entregar durabilidade, eficiência e excelente usabilidade. "
-        "Fabricado com componentes de alto padrão, é a escolha ideal para quem busca resolver necessidades do dia a dia com confiança.</p>\n"
+        f"<p><b>Ofereça o melhor em conforto e saúde com o {prod_nome}!</b></p>\n"
+        f"<p>O <b>{prod_nome}</b> foi projetado para entregar ergonomia, praticidade e total segurança para seu pet. "
+        "Fabricado com componentes atóxicos e laváveis, é a escolha ideal para quem busca manter a rotina do animal organizada e saudável.</p>\n"
         "<p><b>Destaques do Produto:</b><br>\n"
-        "- <b>Estrutura Reforçada:</b> Maior resistência para uso contínuo e longa vida útil.<br>\n"
-        "- <b>Design Ergonômico:</b> Facilidade de manuseio e segurança.<br>\n"
-        "- <b>Uso Intuitivo:</b> Simplicidade na utilização sem complicações.</p>\n"
+        "- <b>Design Ergonômico:</b> Preserva a postura cervical e melhora a digestão.<br>\n"
+        "- <b>Fácil Limpeza:</b> Estrutura higiênica que evita acúmulo de bactérias.<br>\n"
+        "- <b>Base Estável:</b> Evita deslizamentos e sujeira no piso durante a refeição.</p>\n"
         "<p><b>Conteúdo da Embalagem:</b><br>\n"
         f"- 01 {prod_nome}<br>\n"
-        "- 01 Manual de Instruções em Português</p>"
+        "- 01 Guia de Cuidados em Português</p>"
     )
     return texto_fluido, html_limpo
 
 
 def gerar_bullet_points_a10_dinamico(prod_nome: str) -> str:
     bullets = [
-        f"🎯 **ALTA PERFORMANCE E EFICIÊNCIA:** Projeto técnico do {prod_nome} desenvolvido para entregar desempenho superior e máxima confiabilidade.",
-        "🧱 **ESTRUTURA REFORÇADA:** Confeccionado com materiais de alta densidade para suportar o uso contínuo sem deformação.",
-        "⚡ **DESIGN ERGONÔMICO E PRÁTICO:** Formato pensado para facilitar o manuseio e proporcionar total controle e segurança durante o uso.",
-        "🛡️ **COMPONENTES CERTIFICADOS:** Fabricação atóxica e segura conforme as diretrizes regulatórias e de proteção ao consumidor.",
-        "🔧 **MONTAGEM E USO INTUITIVO:** Acionamento simples sem necessidade de ferramentas complexas ou instalações demoradas.",
-        "💡 **VERSATILIDADE MULTIUSO:** Adapta-se perfeitamente às exigências do ambiente doméstico, comercial ou profissional.",
-        "🧼 **FÁCIL HIGIENIZAÇÃO:** Superfície com acabamento especial que evita o acúmulo de sujidades e simplifica a manutenção.",
-        "⚙️ **ENCAIXES DE PRECISÃO:** Engenharia com tolerâncias reduzidas que garantem estabilidade e funcionamento sem folgas.",
-        "🌿 **EFICIÊNCIA E ECONOMIA:** Desenvolvimento focado no aproveitamento otimizado de recursos durante o uso.",
-        "📦 **EMBALAGEM DE PROTEÇÃO:** Enviado em caixa reforçada para preservar a integridade estrutural do produto até o destino."
+        f"🐾 **ERGONOMIA E CONFORTO ANATÔMICO:** Projeto do {prod_nome} desenvolvido para promover a postura correta e facilitar a alimentação do pet.",
+        "🧼 **HIGIENIZAÇÃO RÁPIDA E PRÁTICA:** Confeccionado em material lavável e atóxico que previne a proliferação de fungos e bactérias.",
+        "🛑 **BASE COM TRAVA ANTIDERRAPANTE:** Estrutura firme que impede o produto de deslizar ou tombar durante o uso pelo animal.",
+        "🛡️ **MATERIAIS CERTIFICADOS E ATÓXICOS:** Livre de BPA e substâncias nocivas, garantindo total segurança para a saúde do cão ou gato.",
+        "⚡ **DESIGN MODERNO E COMPACTO:** Combina perfeitamente com a decoração do ambiente sem ocupar espaço excessivo.",
+        "🔧 **MONTAGEM E MANUSEIO INTUITIVO:** Estrutura simples de abastecer, limpar e transportar em viagens ou passeios.",
+        "💧 **RESISTÊNCIA CONTRA IMPACTOS:** Construção reforçada desenvolvida para suportar a rotina diária e uso contínuo.",
+        "⚙️ **TIGELA COM ENCAIXE PRECISO:** Sistema que evita folgas e reduz o derramamento de água ou ração no chão.",
+        "🌿 **SAÚDE DIGESTIVA MELHORADA:** Altura e ângulo pensados para diminuir a ingestão de ar e refluxos durante a refeição.",
+        "📦 **EMBALAGEM DE PROTEÇÃO:** Enviado em caixa reforçada para garantir que o item chegue intacto ao seu endereço."
     ]
     return "\n".join([f"* {b}" for b in bullets])
 
@@ -294,12 +299,10 @@ def gerar_backend_keywords_a10_dinamico(prod_nome: str, titulo_a: str, titulo_b:
 
     candidatos_especificos = [remover_acentos(w.lower()) for w in palavras_reais if len(w) > 1]
     candidatos_genericos = [
-        "churrasco", "grelhar", "carne", "inox", "moeda", "reforcada", "cabo",
-        "madeira", "utilidade", "acessorio", "duravel", "resistente", "eficiente",
-        "cotidiano", "pratico", "qualidade", "modelo", "novo", "espeto", "parrilla",
-        "picanha", "linguica", "frango", "churrasqueira", "fogo", "carvao", "grelhado",
-        "assado", "tambor", "portatil", "varanda", "gourmet", "tampa", "trava", "fecho",
-        "dupla", "giratoria", "marmita", "utensilio", "domestico", "area", "externa"
+        "comedouro", "bebedouro", "pet", "caes", "gatos", "cachorro", "gato",
+        "tigela", "prato", "racao", "agua", "inox", "elevado", "ergonomico",
+        "antiderrapante", "postura", "cervical", "saude", "higienico", "lavavel",
+        "filhote", "porte", "pequeno", "medio", "acessorio", "utensilio", "domestico"
     ]
     candidatos_totais = candidatos_especificos + candidatos_genericos
 
@@ -337,9 +340,9 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
         "📌 DADOS DO PRODUTO CONSULTADO:\n"
         "- Entrada Original: " + str(termo_entrada) + "\n"
         "- Termo do Produto/Nicho: " + str(termo_exibicao) + "\n"
-        "- Best Seller de Referência: " + str(dados_lider['titulo_lider']) + " (ASIN: " + str(dados_lider['asin_lider']) + ")\n\n"
+        "- Concorrente Lider de Vendas: " + str(dados_lider['titulo_lider']) + " (ASIN: " + str(dados_lider['asin_lider']) + ")\n\n"
         "🧠 ETAPA DE ANÁLISE (OBRIGATÓRIA - SILENCIOSA - NÃO EXIBIR NA SAÍDA):\n"
-        "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos baseando-se estritamente no termo completo do produto e no líder de vendas identificado acima.\n\n"
+        "Analise público ideal, diferencial competitivo, dores que o produto resolve, benefícios e atributos técnicos baseando-se estritamente no produto identificado acima.\n\n"
         "🚨 REGRAS CRÍTICAS DE COPYWRITING E CONFORMIDADE AMAZON:\n"
         "1. TÍTULOS A e B: Preencha exatamente entre 70 e 75 caracteres cada (sem ultrapassar 75). Sem palavras proibidas ('Pronta Entrega', 'FBA', 'Envio Rápido', 'Alta Qualidade', 'Premium', 'Melhor'). Estrutura: [Nome do Produto] + [Especificação/Atributo].\n"
         "2. DESCRIÇÃO DO PRODUTO: Texto fluido entre 1.200 e 1.900 caracteres em técnica AIDA com especificações técnicas e conteúdo da embalagem.\n"
@@ -402,28 +405,28 @@ def processar_e_gerar_markdown(termo_entrada: str) -> str:
         "---\n\n"
         "**5. PROMPTS PARA IMAGENS DA LISTAGEM (10 PROMPTS)**\n"
         "1. **Foto 01 (Principal - Fundo Branco):** using the attached base product image as an overlay without any modification to the product itself, isolated on seamless pure white background (RGB 255,255,255), product filling 85% of frame, crisp studio commercial lighting, Amazon main image standard.\n"
-        "2. **Foto 02 (Uso Real / Lifestyle):** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle background, natural commercial lighting.\n"
-        "3. **Foto 03 (Infográfico de Benefícios):** using the attached base product image as an overlay without any modification to the product itself, clean infographic layout with callout lines pointing to key features, Portuguese text space.\n"
-        "4. **Foto 04 (Dimensões e Escala):** using the attached base product image as an overlay without any modification to the product itself, dimensional infographic with clear height and width scale indicators in Portuguese.\n"
-        "5. **Foto 05 (Conteúdo da Embalagem):** using the attached base product image as an overlay without any modification to the product itself, overhead layflat view showing product and accessories.\n"
-        "6. **Foto 06 (Close de Material):** using the attached base product image as an overlay without any modification to the product itself, extreme macro shot focusing on material texture and finish.\n"
-        "7. **Foto 07 (Funcionalidade):** using the attached base product image as an overlay without any modification to the product itself, demonstration composition highlighting core functionality.\n"
-        "8. **Foto 08 (Cenários Diversos):** using the attached base product image as an overlay without any modification to the product itself, multi-scenario usage representation.\n"
-        "9. **Foto 09 (Comparativo):** using the attached base product image as an overlay without any modification to the product itself, side-by-side visual comparison highlighting premium build vs generic alternative.\n"
-        "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, summary banner with trust badges in Portuguese text.\n\n"
+        "2. **Foto 02 (Uso Real / Lifestyle):** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle background with cat or dog, natural commercial lighting.\n"
+        "3. **Foto 03 (Infográfico de Benefícios):** using the attached base product image as an overlay without any modification to the product itself, clean infographic layout pointing out ergonomic benefits and non-slip base in Portuguese.\n"
+        "4. **Foto 04 (Dimensões e Escala):** using the attached base product image as an overlay without any modification to the product itself, dimensional infographic with clear height, width, and capacity in ML/grams.\n"
+        "5. **Foto 05 (Conteúdo da Embalagem):** using the attached base product image as an overlay without any modification to the product itself, overhead layflat view showing bowl and accessories.\n"
+        "6. **Foto 06 (Close de Material):** using the attached base product image as an overlay without any modification to the product itself, macro shot focusing on stainless steel texture or non-toxic finish.\n"
+        "7. **Foto 07 (Funcionalidade):** using the attached base product image as an overlay without any modification to the product itself, demonstration showing easy washing and cleaning.\n"
+        "8. **Foto 08 (Cenários Diversos):** using the attached base product image as an overlay without any modification to the product itself, home environment setup.\n"
+        "9. **Foto 09 (Comparativo):** using the attached base product image as an overlay without any modification to the product itself, side-by-side comparison showing ergonomic posture vs floor feeding.\n"
+        "10. **Foto 10 (Confiança e Garantia):** using the attached base product image as an overlay without any modification to the product itself, trust badges in Portuguese.\n\n"
         "---\n\n"
         "**6. ROTEIRO DE VÍDEO (30–45s)**\n"
-        "- **Cena 01 (0–5s):** Gancho visual apresentando o " + termo_exibicao + " em funcionamento.\n"
-        "- **Cena 02 (5–15s):** Demonstração prática dos principais recursos no dia a dia.\n"
-        "- **Cena 03 (15–25s):** Detalhes de acabamento e diferenciais técnicos.\n"
-        "- **Cena 04 (25–35s):** Aplicação em ambiente real.\n"
-        "- **Cena 05 (35–45s):** Encerramento elegante com apresentação da marca na Amazon BR.\n\n"
+        "- **Cena 01 (0–5s):** Gancho visual apresentando o pet utilizando o " + termo_exibicao + " confortavelmente.\n"
+        "- **Cena 02 (5–15s):** Demonstração da trava antiderrapante e higienização simples da tigela.\n"
+        "- **Cena 03 (15–25s):** Detalhes de acabamento e estrutura atóxica.\n"
+        "- **Cena 04 (25–35s):** Aplicação prática na rotina doméstica.\n"
+        "- **Cena 05 (35–45s):** Encerramento da marca para o público Pet na Amazon BR.\n\n"
         "---\n\n"
         "**7. CONTEÚDO A+ & 8. PROMPTS A+ (6 BANNERS INGLÊS)**\n"
         "1. **Banner Hero:** using the attached base product image as an overlay without any modification to the product itself, wide Amazon A+ banner composition, studio lighting.\n"
         "2. **Benefícios Visuais:** using the attached base product image as an overlay without any modification to the product itself, clean A+ infographic layout.\n"
         "3. **Diferencial Técnico:** using the attached base product image as an overlay without any modification to the product itself, macro lighting highlighting build quality.\n"
-        "4. **Uso Real:** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle scene.\n"
+        "4. **Uso Real:** using the attached base product image as an overlay without any modification to the product itself, realistic lifestyle scene with pet.\n"
         "5. **Comparação Visual:** using the attached base product image as an overlay without any modification to the product itself, clean comparative layout.\n"
         "6. **Capacidade / Aplicação:** using the attached base product image as an overlay without any modification to the product itself, visual demonstration of practical application.\n"
     )
