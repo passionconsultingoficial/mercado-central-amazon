@@ -3,7 +3,7 @@ import re
 import base64
 import requests
 import unicodedata
-import Streamlit as st
+import streamlit as st
 from bs4 import BeautifulSoup
 from anthropic import Anthropic
 
@@ -14,47 +14,47 @@ def obter_token_sp_api() -> str:
     client_id = os.getenv("LWA_CLIENT_ID") or st.secrets.get("LWA_CLIENT_ID", "")
     client_secret = os.getenv("LWA_CLIENT_SECRET") or st.secrets.get("LWA_CLIENT_SECRET", "")
 
-    If not (refresh_token and client_id and client_secret):
-        Return ""
+    if not (refresh_token and client_id and client_secret):
+        return ""
 
-    Url_token = "https://api.amazon.com/auth/o2/token"
-    Payload = {
+    url_token = "https://api.amazon.com/auth/o2/token"
+    payload = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
         "client_id": client_id,
         "client_secret": client_secret,
     }
-    Try:
-        Res = requests.post(url_token, data=payload, timeout=6)
-        If res.status_code == 200:
-            Return res.json().get("access_token", "")
-    Except Exception:
-        Pass
-    Return ""
+    try:
+        res = requests.post(url_token, data=payload, timeout=6)
+        if res.status_code == 200:
+            return res.json().get("access_token", "")
+    except Exception:
+        pass
+    return ""
 
 
-Def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
+def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_key: str) -> str:
     """Análise multimodal via Claude Vision para extração exata do produto."""
-    If not api_key or len(api_key.strip()) < 10:
-        Return ""
+    if not api_key or len(api_key.strip()) < 10:
+        return ""
 
-    Try:
-        B64_img = base64.b64encode(image_bytes).decode('utf-8')
-        Client = Anthropic(api_key=api_key.strip())
-        Media_type = mime_type if mime_type in ["image/jpeg", "image/png", "image/gif", "image/webp"] else "image/jpeg"
+    try:
+        b64_img = base64.b64encode(image_bytes).decode('utf-8')
+        client = Anthropic(api_key=api_key.strip())
+        media_type = mime_type if mime_type in ["image/jpeg", "image/png", "image/gif", "image/webp"] else "image/jpeg"
 
-        Modelos = [
+        modelos = [
             "claude-3-5-sonnet-latest",
             "claude-3-5-haiku-latest",
             "claude-3-haiku-20240307"
         ]
 
-        For model_id in modelos:
-            Try:
-                Response = client.messages.create(
-                    Model=model_id,
-                    Max_tokens=200,
-                    Messages=[
+        for model_id in modelos:
+            try:
+                response = client.messages.create(
+                    model=model_id,
+                    max_tokens=200,
+                    messages=[
                         {
                             "role": "user",
                             "content": [
@@ -78,24 +78,24 @@ Def analisar_imagem_visuo_computacional(image_bytes: bytes, mime_type: str, api_
                         }
                     ],
                 )
-                Termo = response.content[0].text.strip().replace("\n", " ")
-                If termo:
-                    Return termo
-            Except Exception:
-                Continue
+                termo = response.content[0].text.strip().replace("\n", " ")
+                if termo:
+                    return termo
+            except Exception:
+                continue
 
-        Return ""
-    Except Exception as e:
-        St.error(f"Erro na análise visual: {e}")
-        Return ""
+        return ""
+    except Exception as e:
+        st.error(f"Erro na análise visual: {e}")
+        return ""
 
 
-Def buscar_vencedor_real_subcategoria_amazon_br(query: str) -> dict:
+def buscar_vencedor_real_subcategoria_amazon_br(query: str) -> dict:
     """
     Realiza busca com rotação de headers simulando navegação real
     para capturar o ASIN, Título e Preço do PRIMEIRO VENCEDOR ORGÂNICO da subcategoria.
     """
-    Headers = {
+    headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -105,103 +105,99 @@ Def buscar_vencedor_real_subcategoria_amazon_br(query: str) -> dict:
         "Upgrade-Insecure-Requests": "1"
     }
     
-    Query_clean = requests.utils.quote(query)
-    Url_search = f"https://www.amazon.com.br/s?k={query_clean}"
+    query_clean = requests.utils.quote(query)
+    url_search = f"https://www.amazon.com.br/s?k={query_clean}"
     
-    Dados_vencedor = {
+    dados_vencedor = {
         "titulo_lider": "",
         "asin_lider": "",
         "preco_lider": "",
         "link_lider": url_search
     }
 
-    Try:
-        Session = requests.Session()
-        Res = session.get(url_search, headers=headers, timeout=8)
+    try:
+        session = requests.Session()
+        res = session.get(url_search, headers=headers, timeout=8)
         
-        If res.status_code == 200:
-            Soup = BeautifulSoup(res.content, "html.parser")
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content, "html.parser")
+            produtos = soup.find_all("div", {"data-component-type": "s-search-result"})
             
-            # Busca containers de produtos orgânicos
-            Produtos = soup.find_all("div", {"data-component-type": "s-search-result"})
-            
-            For prod in produtos:
+            for prod in produtos:
                 # Descarta anúncios patrocinados
-                Is_sponsored = (
-                    Prod.find("span", string=re.compile(r"Patrocinado|Sponsored", re.I)) or
+                is_sponsored = (
+                    prod.find("span", string=re.compile(r"Patrocinado|Sponsored", re.I)) or
                     "s-sponsored-label-info-icon" in str(prod) or
                     "puppy-pi-carousel" in str(prod)
                 )
-                If is_sponsored:
-                    Continue
+                if is_sponsored:
+                    continue
 
-                Asin = prod.get("data-asin", "").strip()
-                Title_elem = prod.find("h2") or prod.find("span", {"class": "a-text-normal"})
-                Price_elem = prod.find("span", {"class": "a-offscreen"})
+                asin = prod.get("data-asin", "").strip()
+                title_elem = prod.find("h2") or prod.find("span", {"class": "a-text-normal"})
+                price_elem = prod.find("span", {"class": "a-offscreen"})
 
-                If asin and title_elem:
-                    Titulo = title_elem.get_text().strip()
-                    Preco = price_elem.get_text().strip() if price_elem else "Consulte na Loja"
+                if asin and title_elem:
+                    titulo = title_elem.get_text().strip()
+                    preco = price_elem.get_text().strip() if price_elem else "Consulte na Loja"
                     
-                    # Garante que o ASIN é válido (10 caracteres alfanuméricos)
-                    If len(asin) == 10 and asin.isalnum():
-                        Dados_vencedor["titulo_lider"] = titulo
-                        Dados_vencedor["asin_lider"] = asin
-                        Dados_vencedor["preco_lider"] = preco
-                        Dados_vencedor["link_lider"] = f"https://www.amazon.com.br/dp/{asin}"
-                        Break
-    Except Exception:
-        Pass
+                    if len(asin) == 10 and asin.isalnum():
+                        dados_vencedor["titulo_lider"] = titulo
+                        dados_vencedor["asin_lider"] = asin
+                        dados_vencedor["preco_lider"] = preco
+                        dados_vencedor["link_lider"] = f"https://www.amazon.com.br/dp/{asin}"
+                        break
+    except Exception:
+        pass
 
-    # Caso a busca HTML seja bloqueada, aplica fallback estruturado
-    If not dados_vencedor["asin_lider"]:
-        Dados_vencedor["titulo_lider"] = f"Líder da Categoria: {query.title()}"
-        Dados_vencedor["asin_lider"] = "B08N5WRWNW"
-        Dados_vencedor["preco_lider"] = "Faixa Média do Nicho"
+    if not dados_vencedor["asin_lider"]:
+        dados_vencedor["titulo_lider"] = f"Líder da Categoria: {query.title()}"
+        dados_vencedor["asin_lider"] = "B08N5WRWNW"
+        dados_vencedor["preco_lider"] = "Faixa Média do Nicho"
 
-    Return dados_vencedor
+    return dados_vencedor
 
 
-Def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
-    Termo_clean = termo_entrada.strip()
-    Asin_clean = termo_clean.upper()
-    Token = obter_token_sp_api()
-    Titulo_referencia = termo_clean
+def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
+    termo_clean = termo_entrada.strip()
+    asin_clean = termo_clean.upper()
+    token = obter_token_sp_api()
+    titulo_referencia = termo_clean
 
-    If len(asin_clean) == 10 and asin_clean.isalnum():
-        If token:
-            Headers_sp = {
+    if len(asin_clean) == 10 and asin_clean.isalnum():
+        if token:
+            headers_sp = {
                 "x-amz-access-token": token,
                 "Content-Type": "application/json",
             }
-            Url_item = f"https://sellingpartnerapi-fe.amazon.com/catalog/2022-04-01/items/{asin_clean}?marketplaceIds=A21TJRUUN4KGV&includedData=summaries"
-            Try:
-                Res_item = requests.get(url_item, headers=headers_sp, timeout=5)
-                If res_item.status_code == 200:
-                    Summaries = res_item.json().get("summaries", [])
-                    If summaries:
-                        Titulo_referencia = summaries[0].get("itemName", titulo_referencia)
-            Except Exception:
-                Pass
+            url_item = f"https://sellingpartnerapi-fe.amazon.com/catalog/2022-04-01/items/{asin_clean}?marketplaceIds=A21TJRUUN4KGV&includedData=summaries"
+            try:
+                res_item = requests.get(url_item, headers=headers_sp, timeout=5)
+                if res_item.status_code == 200:
+                    summaries = res_item.json().get("summaries", [])
+                    if summaries:
+                        titulo_referencia = summaries[0].get("itemName", titulo_referencia)
+            except Exception:
+                pass
 
-        If titulo_referencia == termo_clean:
-            Headers_web = {
+        if titulo_referencia == termo_clean:
+            headers_web = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 "Accept-Language": "pt-BR,pt;q=0.9",
             }
-            Try:
-                Res_dp = requests.get(f"https://www.amazon.com.br/dp/{asin_clean}", headers=headers_web, timeout=6)
-                If res_dp.status_code == 200:
-                    Soup = BeautifulSoup(res_dp.content, "html.parser")
-                    Title_node = soup.find("span", {"id": "productTitle"})
-                    If title_node:
-                        Titulo_referencia = title_node.get_text().strip()
-            Except Exception:
-                Pass
+            try:
+                res_dp = requests.get(f"https://www.amazon.com.br/dp/{asin_clean}", headers=headers_web, timeout=6)
+                if res_dp.status_code == 200:
+                    soup = BeautifulSoup(res_dp.content, "html.parser")
+                    title_node = soup.find("span", {"id": "productTitle"})
+                    if title_node:
+                        titulo_referencia = title_node.get_text().strip()
+            except Exception:
+                pass
 
-    Query_encoded = requests.utils.quote(titulo_referencia)
+    query_encoded = requests.utils.quote(titulo_referencia)
 
-    Termos_busca = [
+    termos_busca = [
         (f"Categoria Direta - {titulo_referencia}", query_encoded),
         (f"Ofertas Similares - {titulo_referencia}", f"{query_encoded}+modelo"),
         (f"Principais Marcas do Nicho - {titulo_referencia}", f"{query_encoded}+top"),
@@ -209,29 +205,28 @@ Def extrair_dados_e_links_categoria_dinamicos(termo_entrada: str) -> tuple:
         (f"Opções de Mercado BR - {titulo_referencia}", f"{query_encoded}+oferta")
     ]
 
-    Links_categoria = []
-    For rotulo, query in termos_busca:
-        Links_categoria.append({
+    links_categoria = []
+    for rotulo, query in termos_busca:
+        links_categoria.append({
             "titulo": rotulo,
             "link": f"https://www.amazon.com.br/s?k={query}"
         })
 
-    Return links_categoria, titulo_referencia
+    return links_categoria, titulo_referencia
 
 
-Def processar_e_gerar_markdown(termo_entrada: str) -> str:
-    Api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
-    Links_categoria, termo_exibicao = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
+def processar_e_gerar_markdown(termo_entrada: str) -> str:
+    api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+    links_categoria, termo_exibicao = extrair_dados_e_links_categoria_dinamicos(termo_entrada)
     
-    # Mapeia o Vencedor Orgânico Real da Subcategoria
-    Dados_vencedor = buscar_vencedor_real_subcategoria_amazon_br(termo_exibicao)
+    dados_vencedor = buscar_vencedor_real_subcategoria_amazon_br(termo_exibicao)
 
-    Links_md = f"### 🔗 Links Oficiais da Categoria e Buscas Reais (Amazon BR):\n\n"
-    For i, cat in enumerate(links_categoria, start=1):
-        Links_md += f"{i}. [{cat['titulo']}]({cat['link']})\n"
-    Links_md += "\n---\n\n"
+    links_md = f"### 🔗 Links Oficiais da Categoria e Buscas Reais (Amazon BR):\n\n"
+    for i, cat in enumerate(links_categoria, start=1):
+        links_md += f"{i}. [{cat['titulo']}]({cat['link']})\n"
+    links_md += "\n---\n\n"
 
-    Prompt_mestre = (
+    prompt_mestre = (
         f"Você é o Maior Especialista em SEO e Copywriting de Alta Conversão para E-commerce na Amazon Brasil.\n\n"
         f"📌 DADOS DE BENCHMARK DA SUBCATEGORIA:\n"
         f"- Produto Alvo: {termo_exibicao}\n"
@@ -282,70 +277,69 @@ Def processar_e_gerar_markdown(termo_entrada: str) -> str:
         "[Gere 6 prompts em inglês para criação dos banners de Conteúdo A+]"
     )
 
-    If api_key and len(str(api_key).strip()) > 10:
-        Try:
-            Client = Anthropic(api_key=str(api_key).strip())
-            Modelos_validos = [
+    if api_key and len(str(api_key).strip()) > 10:
+        try:
+            client = Anthropic(api_key=str(api_key).strip())
+            modelos_validos = [
                 "claude-3-5-sonnet-latest",
                 "claude-3-5-haiku-latest",
                 "claude-3-haiku-20240307",
             ]
-            For model_name in modelos_validos:
-                Try:
-                    Res = client.messages.create(
-                        Model=model_name,
-                        Max_tokens=3800,
-                        Messages=[{"role": "user", "content": prompt_mestre}],
+            for model_name in modelos_validos:
+                try:
+                    res = client.messages.create(
+                        model=model_name,
+                        max_tokens=3800,
+                        messages=[{"role": "user", "content": prompt_mestre}],
                     )
-                    Return links_md + res.content[0].text
-                Except Exception:
-                    Continue
-        Except Exception:
-            Pass
+                    return links_md + res.content[0].text
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
-    # Fallback estruturado dinâmico
-    Return links_md + f"### 📋 Relatório Comparativo Avançado\n\n**Líder Mapeado:** [{dados_vencedor['titulo_lider']}]({dados_vencedor['link_lider']})\n**ASIN:** `{dados_vencedor['asin_lider']}` | **Preço:** `{dados_vencedor['preco_lider']}`"
+    return links_md + f"### 📋 Relatório Comparativo Avançado\n\n**Líder Mapeado:** [{dados_vencedor['titulo_lider']}]({dados_vencedor['link_lider']})\n**ASIN:** `{dados_vencedor['asin_lider']}` | **Preço:** `{dados_vencedor['preco_lider']}`"
 
 
-Def render_module_1():
-    St.subheader("📦 Módulo 1: Análise e Otimização de Listing")
+def render_module_1():
+    st.subheader("📦 Módulo 1: Análise e Otimização de Listing")
 
-    Metodo_pesquisa = st.radio(
+    metodo_pesquisa = st.radio(
         "Como deseja buscar o produto?",
         ["🔤 Digitar ASIN ou Nome do Produto", "📸 Subir Foto do Produto (Busca Visual)"],
-        Horizontal=True
+        horizontal=True
     )
 
-    Termo_final = ""
-    Api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+    termo_final = ""
+    api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
 
-    If "Digitar" in metodo_pesquisa:
-        Termo_input = st.text_input(
+    if "Digitar" in metodo_pesquisa:
+        termo_input = st.text_input(
             "Insira o ASIN ou Nome do Produto:",
-            Value=""
+            value=""
         )
-        Termo_final = termo_input.strip()
-    Else:
-        Uploaded_image = st.file_uploader("Envie a foto do seu produto (PNG, JPG, WEBP):", type=["png", "jpg", "jpeg", "webp"])
-        If uploaded_image is not None:
-            Col_img1, col_img2 = st.columns([1, 2])
-            With col_img1:
-                St.image(uploaded_image, caption="Foto Enviada", width=200)
-            With col_img2:
-                With st.spinner("🔍 Analisando foto do produto com Claude Vision..."):
-                    Termo_identificado = analisar_imagem_visuo_computacional(
-                        Uploaded_image.getvalue(), uploaded_image.type, api_key
+        termo_final = termo_input.strip()
+    else:
+        uploaded_image = st.file_uploader("Envie a foto do seu produto (PNG, JPG, WEBP):", type=["png", "jpg", "jpeg", "webp"])
+        if uploaded_image is not None:
+            col_img1, col_img2 = st.columns([1, 2])
+            with col_img1:
+                st.image(uploaded_image, caption="Foto Enviada", width=200)
+            with col_img2:
+                with st.spinner("🔍 Analisando foto do produto com Claude Vision..."):
+                    termo_identificado = analisar_imagem_visuo_computacional(
+                        uploaded_image.getvalue(), uploaded_image.type, api_key
                     )
-                    If termo_identificado:
-                        St.success(f"**Produto Identificado pela Foto:** `{termo_identificado}`")
-                        Termo_final = termo_identificado
-                    Else:
-                        St.error("Não foi possível identificar a imagem.")
+                    if termo_identificado:
+                        st.success(f"**Produto Identificado pela Foto:** `{termo_identificado}`")
+                        termo_final = termo_identificado
+                    else:
+                        st.error("Não foi possível identificar a imagem.")
 
-    If st.button("🚀 Executar Diagnóstico", use_container_width=True):
-        If not termo_final:
-            St.warning("Por favor, digite um produto ou faça o upload de uma imagem válida.")
-        Else:
-            With st.spinner(f"Mapeando o vencedor da subcategoria para '{termo_final}' na Amazon BR..."):
-                Resultado = processar_e_gerar_markdown(termo_final)
-                St.markdown(resultado)
+    if st.button("🚀 Executar Diagnóstico", use_container_width=True):
+        if not termo_final:
+            st.warning("Por favor, digite um produto ou faça o upload de uma imagem válida.")
+        else:
+            with st.spinner(f"Mapeando o vencedor da subcategoria para '{termo_final}' na Amazon BR..."):
+                resultado = processar_e_gerar_markdown(termo_final)
+                st.markdown(resultado)
